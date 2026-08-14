@@ -1,0 +1,6 @@
+# Large reference video stays out of git
+*.MP4
+*.mp4
+
+node_modules/
+dist/

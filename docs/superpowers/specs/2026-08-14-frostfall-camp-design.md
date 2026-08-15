@@ -297,3 +297,33 @@ fixed volume; the ground plane and fog scale to match.
 per-mesh trees at this population would blow the mesh budget. Per-instance
 scale/rotation variation and shadow casting are preserved. All other entity
 counts stay per-mesh.
+
+---
+
+## Amendment 4 — Depot access, fair hauling, no frozen field, visible mute (2026-08-15, user-directed)
+
+### A. Player depot withdrawal
+Standing at the depot (inside the fort) streams goods from the depot into the
+player's pack at the deposit rate, respecting carry capacity, in value-priority
+order **gold → meat → wood**. This lets the player collect mined gold and spend
+it on gold-priced pads. Withdrawal pauses while the player is over 80% carry
+so it can't fight their intent to deposit elsewhere.
+
+### B. Fair crew hauling
+Crew/hauler trips rotate across ALL non-empty depot piles (per-carrier
+round-robin) instead of always taking the largest — fixes gold never reaching
+its bench while meat dominates the depot.
+
+### C. Remove the frozen villager field
+The rescue mechanic is cut: no frozen villagers, no thawing, no rescued
+counter. (The ad's queues of people are what our customers now are; the
+frozen field duplicated that at the cost of an endgame meat grind.) The win
+condition becomes **all 18 pads completed**. Meat is a pure commodity. The
+distributor crew grows to **5** to cover the hauling the rescued villagers
+provided. The snow-trench slabs and field fences go away with the field.
+Old saves with thawed lists load cleanly (field ignored). thawCost and all
+rescue balance constants are removed.
+
+### D. Visible mute
+A small always-visible speaker toggle (drawn icon, both states) joins the
+sidebar, synced with the M key and the pause-menu button.

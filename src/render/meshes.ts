@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { Currency, ToolId } from '../game/state';
+import type { Currency, ToolId, VillagerKind } from '../game/state';
 
 /**
  * Every geometry, material and texture created at module scope is registered here. The renderer
@@ -28,6 +28,7 @@ export const COLORS = {
   skin: 0xf1c9a2, beard: 0xf8f8f5, fur: 0xf3e7d2,
   playerCoat: 0x2f6fbb, playerCoatDark: 0x24548f,
   villagerCoat: 0x2fb3c9, villagerCoatDark: 0x208d9e,
+  crewCoat: 0xf07818, crewCoatDark: 0xbc560c,
   ice: 0x9adcf0, frost: 0xdff7ff,
   bench: 0xef9640, benchDark: 0xc4762c, mat: 0x33383d,
   wood: 0xb07a3f, meat: 0xdc5a52, gold: 0xf6c945, cash: 0x4fbf62,
@@ -626,11 +627,20 @@ export function makeTool(kind: ToolId | 'pickaxe'): THREE.Group {
 }
 
 export interface VillagerRefs extends PersonRefs {
-  ice: THREE.Object3D; frost: THREE.Object3D; load: THREE.Object3D;
+  ice: THREE.Object3D; frost: THREE.Object3D; load: THREE.Mesh;
 }
 
-export function makeVillager(): THREE.Group {
-  const g = makePerson(COLORS.villagerCoat, COLORS.villagerCoatDark, false);
+/**
+ * Rescued villagers wear the camp's teal; the fort's hand-off crew wears hi-vis orange so the
+ * three of them read as staff at a glance, in the fort and out on the bench run.
+ */
+export function makeVillager(kind: VillagerKind = 'rescued'): THREE.Group {
+  const crew = kind === 'crew';
+  const g = makePerson(
+    crew ? COLORS.crewCoat : COLORS.villagerCoat,
+    crew ? COLORS.crewCoatDark : COLORS.villagerCoatDark,
+    false,
+  );
   const base = refsOf<PersonRefs>(g);
   const ice = new THREE.Mesh(GEO.villagerIce, lam(COLORS.ice, 0.45));
   ice.position.y = 0.97;
@@ -644,6 +654,31 @@ export function makeVillager(): THREE.Group {
   load.visible = false;
   g.add(ice, frost, load);
   g.userData.refs = { ...base, ice, frost, load } satisfies VillagerRefs;
+  return g;
+}
+
+/**
+ * Shoppers' parkas, warm tones against the camp's teal and the player's blue so a queue reads as
+ * outsiders coming in to buy. Picked per customer id, so one keeps its coat for its whole visit.
+ */
+export const CUSTOMER_COATS: { coat: number; dark: number }[] = [
+  { coat: 0xe0a63c, dark: 0xb87f22 }, // mustard
+  { coat: 0xcf5b4a, dark: 0xa8402f }, // brick
+  { coat: 0xbb8a5c, dark: 0x93683f }, // camel
+  { coat: 0xd06fa0, dark: 0xa54f7c }, // rose
+];
+
+export interface CustomerRefs extends PersonRefs { load: THREE.Mesh }
+
+export function makeCustomer(coatIndex: number): THREE.Group {
+  const palette = CUSTOMER_COATS[coatIndex % CUSTOMER_COATS.length];
+  const g = makePerson(palette.coat, palette.dark, false);
+  // Shown only on the way out, so a served shopper visibly carries its purchase off the map.
+  const load = new THREE.Mesh(GEO.villagerLoad, lam(COLORS.wood));
+  load.position.set(0, 1.1, -0.45);
+  load.visible = false;
+  g.add(load);
+  g.userData.refs = { ...refsOf<PersonRefs>(g), load } satisfies CustomerRefs;
   return g;
 }
 

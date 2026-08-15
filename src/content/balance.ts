@@ -56,16 +56,20 @@ export const HAUL_AMOUNT = 3;
  * Shop customers (Amendment 2A). Benches no longer mint cash on deposit: they hold stock, and
  * these numbers set how fast a line of buyers converts it.
  *
- * Throughput per bench is bounded by the cap, not the interval: a shopper occupies one of the
- * `CUSTOMER_QUEUE_CAP` slots for its whole trip (~12 s walking the 50-unit road plus the dwell),
- * so a stocked bench sells roughly `CAP / 13 s × TAKE ≈ 1.4` goods per second. That comfortably
- * exceeds what the player can gather (~1/s with the hatchet) and what the machines feed the
- * depot, while leaving a visible backlog on the bubble — the ad's counting-down bench label.
- * The interval is what sets the LOOK: at 0.6 s shoppers walk in ~2.5 apart, reading as the
- * reference's single-file lines rather than lone pedestrians.
+ * The cap covers everyone committed to a bench — standing in its line AND still walking in —
+ * which is what bounds throughput: a shopper holds its slot for the whole trip (~12 s down the
+ * 50-unit road, plus the dwell), so a stocked bench sells about `CAP / 13 s × TAKE ≈ 2.8` goods
+ * per second. That outruns anything the player can gather or the machines can feed the depot,
+ * while still leaving a backlog on the bubble — the ad's counting-down bench label.
+ *
+ * The cap is 12 rather than the amendment's ~6 for the LOOK, checked in the browser: with a
+ * 12-second walk-in, a cap of 6 lets shoppers reach the counter slower than the counter serves
+ * them, so no line ever forms — the one thing the amendment is asking for. At 12 the road
+ * carries a single-file stream (0.6 s apart is ~2.5 units of spacing) and 4-6 shoppers stand
+ * waiting at a busy bench, matching the reference frames.
  */
 export const CUSTOMER_INTERVAL = 0.6;
-export const CUSTOMER_QUEUE_CAP = 6;
+export const CUSTOMER_QUEUE_CAP = 12;
 export const CUSTOMER_SPEED = 4.2;
 export const CUSTOMER_DWELL = 0.8;
 export const CUSTOMER_TAKE = 3;

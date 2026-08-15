@@ -6,14 +6,15 @@ import { padAvailable } from '../game/systems/pads';
 import type { Rect, Vec2 } from '../game/math';
 import type { GameEvent, GameState, GateZone } from '../game/state';
 import type {
-  BearRefs, CartRefs, PadRefs, PlayerRefs, SawmillRefs, TreeRefs, VillagerRefs,
+  BearRefs, CartRefs, CustomerRefs, PadRefs, PlayerRefs, SawmillRefs, TreeRefs, VillagerRefs,
 } from './meshes';
 import {
-  BEAR_BODY_SCALE, CAMP_TIERS, COLORS, SHARED, bubbleTexture, hash01, makeBear, makeBench, makeCampTier,
-  makeCarryBox, makeCart, makeCrate, makeDropMesh, makeFenceRun, makeGateWall, makeIconTextLabel,
-  makeMatMesh, makePadLabel, makePadMesh, makePileStack, makePlayer, makeRailMesh, makeRock,
-  makeSawmill, makeSeam, makeSlab, makeBubbleLabel, makeTextLabel, makeTool, makeTree, makeTurret,
-  makeVillager, refsOf, snowflakeTexture,
+  BEAR_BODY_SCALE, CAMP_TIERS, COLORS, CUSTOMER_COATS, SHARED, bubbleTexture, hash01, lam, makeBear,
+  makeBench, makeCampTier, makeCarryBox, makeCart, makeCrate, makeCustomer, makeDropMesh,
+  makeFenceRun, makeGateWall, makeIconTextLabel, makeMatMesh, makePadLabel, makePadMesh,
+  makePileStack, makePlayer, makeRailMesh, makeRock, makeSawmill, makeSeam, makeSlab,
+  makeBubbleLabel, makeTextLabel, makeTool, makeTree, makeTurret, makeVillager, refsOf,
+  snowflakeTexture,
 } from './meshes';
 
 const CAM_OFFSET = new THREE.Vector3(16, 20, 16);
@@ -80,6 +81,8 @@ export class Renderer {
   private sun!: THREE.DirectionalLight;
   private meshes = new Map<string, THREE.Object3D>();
   private dropMeshes = new Map<string, THREE.Object3D>();
+  /** Shoppers come and go constantly, so they get their own spawn/despawn map like drops. */
+  private customerMeshes = new Map<string, THREE.Object3D>();
   private gates = new Map<GateZone, THREE.Object3D>();
   private floats: FloatingText[] = [];
   private snowLayers: THREE.Points[] = [];
@@ -91,7 +94,7 @@ export class Renderer {
   private lastCarryKey = '';
   private lastCampTier = -1;
   private stationBubbles = new Map<string, THREE.Sprite>();
-  private lastMatCash = new Map<string, number>();
+  private lastStock = new Map<string, number>();
   private hitFlash = 0;
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -311,12 +314,14 @@ export class Renderer {
     for (const st of state.stations) {
       const bench = setShadow(makeBench(), true);
       bench.position.set(st.pos.x, 0, st.pos.z);
-      const count = Math.floor(st.matCash);
+      // The bubble counts the goods on the shelf, the way the ad's benches count down as buyers
+      // take them; the cash they leave behind is the bill stack on the mat instead.
+      const count = Math.floor(st.stock);
       const label = makeBubbleLabel(st.resource, count);
       label.position.y = 3.1;
       bench.add(label);
       this.stationBubbles.set(st.id, label);
-      this.lastMatCash.set(st.id, count);
+      this.lastStock.set(st.id, count);
       this.scene.add(bench);
       const mat = makeMatMesh();
       mat.position.set(st.matPos.x, 0, st.matPos.z);
@@ -365,9 +370,10 @@ export class Renderer {
     }
     this.meshes.clear();
     this.dropMeshes.clear();
+    this.customerMeshes.clear();
     this.gates.clear();
     this.stationBubbles.clear();
-    this.lastMatCash.clear();
+    this.lastStock.clear();
     this.snowLayers = [];
     this.hitFlash = 0;
   }
@@ -473,11 +479,11 @@ export class Renderer {
     for (const st of state.stations) {
       this.syncPile(`cash-${st.id}`, st.matPos.x, st.matPos.z, st.matCash, COLORS.cash, 10, 24, 0.07);
       // Repainting a 256² canvas every frame would be wasteful and pointless: only redraw when
-      // the whole-cash figure the bubble actually shows has moved.
-      const count = Math.floor(st.matCash);
+      // the whole-goods figure the bubble actually shows has moved.
+      const count = Math.floor(st.stock);
       const bubble = this.stationBubbles.get(st.id);
-      if (bubble && this.lastMatCash.get(st.id) !== count) {
-        this.lastMatCash.set(st.id, count);
+      if (bubble && this.lastStock.get(st.id) !== count) {
+        this.lastStock.set(st.id, count);
         bubble.material.map = bubbleTexture(st.resource, count);
       }
     }
@@ -517,7 +523,7 @@ export class Renderer {
     this.syncCamp(state);
     for (let i = 0; i < state.villagers.length; i++) {
       const vil = state.villagers[i];
-      const m = this.ensure(vil.id, () => setShadow(makeVillager(), true));
+      const m = this.ensure(vil.id, () => setShadow(makeVillager(vil.kind), true));
       const frozen = vil.state === 'frozen';
       // Haulers all converge on the same logic positions; nudge each one off the pile so the
       // crowd reads as individuals. Frozen rows stay on their exact grid.
@@ -529,7 +535,9 @@ export class Renderer {
       refs.ice.visible = frozen;
       refs.frost.visible = frozen;
       refs.load.visible = vil.carrying !== null;
+      if (vil.carrying) refs.load.material = lam(COLORS[vil.carrying]);
     }
+    this.syncCustomers(state);
     for (const [zone, wall] of this.gates) wall.visible = !state.zonesOpen[zone];
     const p = state.player.pos;
     this.target.lerp(this.scratch.set(p.x, 0, p.z), 1 - Math.exp(-5 * dt));
@@ -539,6 +547,44 @@ export class Renderer {
     this.sun.position.copy(this.target).add(SUN_OFFSET);
     this.sun.target.position.copy(this.target);
     this.sun.target.updateMatrixWorld();
+  }
+
+  /**
+   * Shoppers, spawned and despawned against `state.customers`. Every position here is state's —
+   * the queue and its shuffle are simulated, not animated. All this adds is the walk cycle and a
+   * facing derived from where the shopper moved since the last frame, so a line all faces the
+   * bench and departing buyers turn around.
+   */
+  private syncCustomers(state: GameState): void {
+    const live = new Set<string>();
+    for (const c of state.customers) {
+      live.add(c.id);
+      let m = this.customerMeshes.get(c.id);
+      if (!m) {
+        m = setShadow(makeCustomer(Math.floor(hash01(c.id) * CUSTOMER_COATS.length)), true);
+        this.customerMeshes.set(c.id, m);
+        this.scene.add(m);
+      }
+      const last = m.userData.last as Vec2 | undefined;
+      const dx = c.pos.x - (last?.x ?? c.pos.x);
+      const dz = c.pos.z - (last?.z ?? c.pos.z);
+      const moved = Math.hypot(dx, dz);
+      m.userData.last = { x: c.pos.x, z: c.pos.z };
+      if (moved > 1e-4) m.rotation.y = Math.atan2(dx, dz);
+      const bob = moved > 1e-4 ? Math.abs(Math.sin(this.t * 8 + hash01(c.id) * 6)) * 0.08 : 0;
+      m.position.set(c.pos.x, bob, c.pos.z);
+      const refs = refsOf<CustomerRefs>(m);
+      refs.load.visible = c.bought > 0;
+      if (c.bought > 0) {
+        const st = state.stations.find((s) => s.id === c.stationId);
+        if (st) refs.load.material = lam(COLORS[st.resource]);
+      }
+    }
+    for (const [id, m] of this.customerMeshes) {
+      if (live.has(id)) continue;
+      this.scene.remove(m);
+      this.customerMeshes.delete(id);
+    }
   }
 
   /**

@@ -43,7 +43,7 @@ function haulerTick(state: GameState, vil: Villager, dt: number): void {
     if (!st) { vil.carrying = null; vil.amount = 0; return; }
     vil.pos = toward(vil.pos, st.pos, VILLAGER_SPEED * dt);
     if (dist(vil.pos, st.pos) < 1.2) {
-      depositToStation(state, st, vil.carrying, vil.amount);
+      depositToStation(st, vil.carrying, vil.amount);
       vil.carrying = null;
       vil.amount = 0;
     }

@@ -72,6 +72,29 @@ describe('save round-trip', () => {
     expect(restored.stations[0].matCash).toBe(44);
   });
 
+  it('round-trips bench stock, defaulting pre-stock saves to an empty shelf', () => {
+    const state = createInitialState();
+    state.stations[0].stock = 17;
+    const restored = deserialize(serialize(state));
+    expect(restored.stations[0].stock).toBe(17);
+
+    const legacy = JSON.parse(serialize(state)) as Record<string, unknown>;
+    delete legacy.stock;
+    expect(deserialize(JSON.stringify(legacy)).stations[0].stock).toBe(0);
+  });
+
+  it('does not save customers — they are transient', () => {
+    const state = createInitialState();
+    state.stations[0].stock = 5;
+    state.customers.push({
+      id: 'cust1', stationId: 'st-wood', pos: { x: 0, z: 0 },
+      state: 'queued', slot: 0, path: [], timer: 0, bought: 0,
+    });
+    const json = serialize(state);
+    expect(json).not.toContain('cust1');
+    expect(deserialize(json).customers).toEqual([]);
+  });
+
   it('keeps felled trees felled and standing trees standing', () => {
     const state = createInitialState();
     const cut = [state.trees[0], state.trees[5], state.trees[200]];

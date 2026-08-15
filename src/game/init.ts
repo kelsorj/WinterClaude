@@ -25,6 +25,7 @@ export function createInitialState(): GameState {
     drops: [],
     pads: padDefs(),
     stations: stationDefs(),
+    customers: [],
     turrets: turretDefs(),
     sawmills: sawmillDefs(),
     rails,
@@ -42,5 +43,6 @@ export function createInitialState(): GameState {
     stats: { chops: 0, bearsKilled: 0, earned: 0 },
     events: [],
     nextDropId: 1,
+    nextCustomerId: 1,
   };
 }

@@ -36,7 +36,7 @@ describe('villagersTick', () => {
     expect(state.villagers[0].state).toBe('hauler');
   });
 
-  it('haulers ferry depot stock to the matching station as mat cash', () => {
+  it('haulers ferry depot goods onto the matching bench as stock', () => {
     const state = blankState();
     state.depotPos = v(3, 0); // short test route: depot (3,0) → wood station (0,1)
     state.depot.wood = 6;
@@ -44,7 +44,9 @@ describe('villagersTick', () => {
     state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) })); // at depot
     ticks(state, 8); // two short round trips at speed 3
     expect(state.depot.wood).toBe(0);
-    expect(state.stations[0].matCash).toBe(12); // 6 wood * 2
+    // Hauled goods go on the shelf; the cash arrives later, when customers buy them.
+    expect(state.stations[0].stock).toBe(6);
+    expect(state.stations[0].matCash).toBe(0);
   });
 
   it('haulers idle at an empty depot', () => {
@@ -54,6 +56,6 @@ describe('villagersTick', () => {
     state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) }));
     ticks(state, 2);
     expect(state.villagers[0].carrying).toBeNull();
-    expect(state.stations[0].matCash).toBe(0);
+    expect(state.stations[0].stock).toBe(0);
   });
 });

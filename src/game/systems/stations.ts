@@ -1,15 +1,15 @@
-import { DEPOSIT_RATE, SELL_RATE, STATION_RANGE } from '../../content/balance';
+import { DEPOSIT_RATE, STATION_RANGE } from '../../content/balance';
 import { dist, v } from '../math';
 import type { GameState, ResourceKind, SellStation } from '../state';
 
-/** Convert `amount` of `kind` into cash on the station's mat. Used by player deposits and villager haulers. */
-export function depositToStation(state: GameState, st: SellStation, kind: ResourceKind, amount: number): void {
-  if (amount <= 0) return;
-  const cash = amount * SELL_RATE[kind];
-  st.matCash += cash;
-  // 'earned' counts cash created on mats (revenue), not cash collected.
-  state.stats.earned += cash;
-  state.events.push({ type: 'sell', pos: v(st.pos.x, st.pos.z), cash });
+/**
+ * Put `amount` of `kind` on the bench's shelf. Used by player deposits, villager haulers and the
+ * distributor crew alike. Since Amendment 2A this mints no cash: stock sits here until a customer
+ * walks in and buys it (see `customersTick`), which is where the cash and the `sell` event come from.
+ */
+export function depositToStation(st: SellStation, kind: ResourceKind, amount: number): void {
+  if (amount <= 0 || st.resource !== kind) return;
+  st.stock += amount;
 }
 
 export function stationsTick(state: GameState, dt: number): void {
@@ -21,7 +21,7 @@ export function stationsTick(state: GameState, dt: number): void {
       if (n > 0) {
         st.timer -= n;
         p.carry[st.resource] -= n;
-        depositToStation(state, st, st.resource, n);
+        depositToStation(st, st.resource, n);
         state.events.push({ type: 'deposit', pos: v(st.pos.x, st.pos.z) });
       }
     } else {

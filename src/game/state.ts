@@ -34,6 +34,28 @@ export interface Drop { id: string; kind: Currency; amount: number; pos: Vec2 }
 
 export interface SellStation {
   id: string; resource: ResourceKind; pos: Vec2; matPos: Vec2; matCash: number; timer: number;
+  /** Goods waiting on the bench for customers to buy. Deposits add here; sales drain it. */
+  stock: number;
+  /** Seconds since this bench last drew a shopper. Transient — never saved. */
+  spawnTimer: number;
+}
+
+/**
+ * A shopper walking in off the road to buy from one bench: queue up, take up to
+ * `CUSTOMER_TAKE` goods off its stock, leave the cash on the mat, walk back off the map.
+ * Customers are transient — they are never saved and never affect the win condition.
+ */
+export type CustomerState = 'arriving' | 'queued' | 'buying' | 'leaving';
+export interface Customer {
+  id: string; stationId: string; pos: Vec2; state: CustomerState;
+  /** Place in the bench's line; 0 stands at the counter. Ignored once leaving. */
+  slot: number;
+  /** Remaining waypoints, walked in order. Drives 'arriving' and 'leaving'; queueing steers by slot. */
+  path: Vec2[];
+  /** Counts down the dwell at the counter while buying. */
+  timer: number;
+  /** How much this shopper bought, so the renderer can hand it something to carry home. */
+  bought: number;
 }
 
 export type UnlockEffect =
@@ -84,6 +106,7 @@ export interface GameState {
   drops: Drop[];
   pads: Pad[];
   stations: SellStation[];
+  customers: Customer[];
   turrets: Turret[];
   sawmills: Sawmill[];
   rails: Rail[];
@@ -99,4 +122,5 @@ export interface GameState {
   stats: { chops: number; bearsKilled: number; earned: number };
   events: GameEvent[];
   nextDropId: number;
+  nextCustomerId: number;
 }

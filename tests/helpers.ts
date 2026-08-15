@@ -1,6 +1,6 @@
 import { v } from '../src/game/math';
 import type {
-  Bear, Cart, GameState, GoldSeam, Pad, Rail, SellStation, Tree, Villager,
+  Bear, Cart, Customer, GameState, GoldSeam, Pad, Rail, SellStation, Tree, Villager,
 } from '../src/game/state';
 
 export function blankState(): GameState {
@@ -12,14 +12,14 @@ export function blankState(): GameState {
       swingTimer: 0, knockback: v(0, 0),
     },
     trees: [], seams: [], bears: [], drops: [],
-    pads: [], stations: [], turrets: [], sawmills: [], rails: [], carts: [],
+    pads: [], stations: [], customers: [], turrets: [], sawmills: [], rails: [], carts: [],
     depot: { wood: 0, meat: 0, gold: 0 }, depotPos: v(18, 0),
     villagers: [],
     campTier: 0,
     zonesOpen: { start: true, deepforest: false, hunting: false, quarry: false },
     rescued: 0, won: false,
     stats: { chops: 0, bearsKilled: 0, earned: 0 },
-    events: [], nextDropId: 1,
+    events: [], nextDropId: 1, nextCustomerId: 1,
   };
 }
 
@@ -34,7 +34,12 @@ export const aBear = (over: Partial<Bear> = {}): Bear =>
      state: 'sleep', respawn: 0, attackCd: 0, ...over });
 
 export const aStation = (over: Partial<SellStation> = {}): SellStation =>
-  ({ id: 's1', resource: 'wood', pos: v(0, 1), matPos: v(2, 1), matCash: 0, timer: 0, ...over });
+  ({ id: 's1', resource: 'wood', pos: v(0, 1), matPos: v(2, 1), matCash: 0, timer: 0,
+     stock: 0, spawnTimer: 0, ...over });
+
+export const aCustomer = (over: Partial<Customer> = {}): Customer =>
+  ({ id: 'c1', stationId: 's1', pos: v(0, 1), state: 'queued', slot: 0, path: [],
+     timer: 0, bought: 0, ...over });
 
 export const aPad = (over: Partial<Pad> = {}): Pad =>
   ({ id: 'p1', pos: v(0, 1), currency: 'cash', cost: 10, paid: 0, done: false,

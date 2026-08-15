@@ -18,6 +18,8 @@ interface SaveData {
   depot: GameState['depot'];
   machineOutputs: Record<string, number>;
   matCash: Record<string, number>;
+  /** Goods sitting on each bench awaiting customers. Customers themselves are transient. */
+  stock: Record<string, number>;
   stats: GameState['stats'];
 }
 
@@ -37,6 +39,7 @@ export function serialize(state: GameState): string {
       ...state.sawmills.map((s) => [s.id, s.output]),
     ]),
     matCash: Object.fromEntries(state.stations.filter((s) => s.matCash > 0).map((s) => [s.id, s.matCash])),
+    stock: Object.fromEntries(state.stations.filter((s) => s.stock > 0).map((s) => [s.id, s.stock])),
     stats: state.stats,
   };
   return JSON.stringify(data);
@@ -65,7 +68,11 @@ export function deserialize(json: string): GameState {
   for (const pad of state.pads) {
     if (!pad.done) pad.paid = data.padsPaid?.[pad.id] ?? 0;
   }
-  for (const st of state.stations) st.matCash = data.matCash?.[st.id] ?? 0;
+  // Saves written before benches held stock have no `stock` map; those benches load empty.
+  for (const st of state.stations) {
+    st.matCash = data.matCash?.[st.id] ?? 0;
+    st.stock = data.stock?.[st.id] ?? 0;
+  }
   // Machine activation and the camp tier are derived from completed pads rather than stored.
   for (const pad of state.pads) {
     if (!pad.done) continue;

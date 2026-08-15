@@ -1,4 +1,4 @@
-import { makeRng, v, type Rect, type Vec2 } from '../game/math';
+import { dist, makeRng, v, type Rect, type Vec2 } from '../game/math';
 import type { GateZone, Pad, Rail, Sawmill, SellStation, Turret, ZoneId } from '../game/state';
 
 export const WORLD_BOUNDS: Rect = { x0: -60, z0: -40, x1: 60, z1: 40 };
@@ -75,11 +75,34 @@ export function villagerDefs(): Vec2[] {
 }
 
 export function stationDefs(): SellStation[] {
-  return [
-    { id: 'st-wood', resource: 'wood', pos: v(-8, 6.5), matPos: v(-5.5, 6.5), matCash: 0, timer: 0 },
-    { id: 'st-meat', resource: 'meat', pos: v(0, 6.5), matPos: v(2.5, 6.5), matCash: 0, timer: 0 },
-    { id: 'st-gold', resource: 'gold', pos: v(8, 6.5), matPos: v(10.5, 6.5), matCash: 0, timer: 0 },
-  ];
+  const st = (id: string, resource: SellStation['resource'], x: number): SellStation =>
+    ({ id, resource, pos: v(x, 6.5), matPos: v(x + 2.5, 6.5), matCash: 0, timer: 0, stock: 0, spawnTimer: 0 });
+  return [st('st-wood', 'wood', -8), st('st-meat', 'meat', 0), st('st-gold', 'gold', 8)];
+}
+
+/**
+ * The two open ends of the camp road: shoppers walk on from the nearer one and leave the same
+ * way. They sit just inside the world bounds so arrivals appear from off-camera, and just off
+ * the road's centre line so the two directions of traffic do not share a lane.
+ */
+export const ROAD_ENDS: Vec2[] = [v(-58, 2), v(58, -2)];
+
+/**
+ * Where a bench's line starts, relative to the bench, and how far apart shoppers stand in it.
+ * The line runs AWAY from the road (+z, the snow side) so it never blocks the road, and is
+ * offset in x to clear both the bench itself and the cash mat on the far side of it.
+ */
+export const QUEUE_OFFSET: Vec2 = v(-2.0, 1.2);
+export const QUEUE_SPACING = 1.1;
+
+/** Standing spot for the `slot`-th shopper in a bench's line; slot 0 is at the counter. */
+export function queueAnchor(st: SellStation, slot: number): Vec2 {
+  return v(st.pos.x + QUEUE_OFFSET.x, st.pos.z + QUEUE_OFFSET.z + slot * QUEUE_SPACING);
+}
+
+/** Road end a shopper for this bench walks in from (and back out to). */
+export function nearestRoadEnd(pos: Vec2): Vec2 {
+  return ROAD_ENDS.reduce((best, end) => (dist(end, pos) < dist(best, pos) ? end : best));
 }
 
 export function turretDefs(): Turret[] {

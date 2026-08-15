@@ -52,6 +52,24 @@ export const VILLAGER_SPEED = 3;
 export const VILLAGER_RANGE = 1.8;
 export const HAUL_AMOUNT = 3;
 
+/**
+ * Shop customers (Amendment 2A). Benches no longer mint cash on deposit: they hold stock, and
+ * these numbers set how fast a line of buyers converts it.
+ *
+ * Throughput per bench is bounded by the cap, not the interval: a shopper occupies one of the
+ * `CUSTOMER_QUEUE_CAP` slots for its whole trip (~12 s walking the 50-unit road plus the dwell),
+ * so a stocked bench sells roughly `CAP / 13 s × TAKE ≈ 1.4` goods per second. That comfortably
+ * exceeds what the player can gather (~1/s with the hatchet) and what the machines feed the
+ * depot, while leaving a visible backlog on the bubble — the ad's counting-down bench label.
+ * The interval is what sets the LOOK: at 0.6 s shoppers walk in ~2.5 apart, reading as the
+ * reference's single-file lines rather than lone pedestrians.
+ */
+export const CUSTOMER_INTERVAL = 0.6;
+export const CUSTOMER_QUEUE_CAP = 6;
+export const CUSTOMER_SPEED = 4.2;
+export const CUSTOMER_DWELL = 0.8;
+export const CUSTOMER_TAKE = 3;
+
 /** Meat cost to thaw the next villager: 2,2,…,6 across the 40 rescues. */
 export function thawCost(rescued: number): number {
   return 2 + Math.floor(rescued / 8);

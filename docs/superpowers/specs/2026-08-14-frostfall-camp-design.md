@@ -214,3 +214,26 @@ commodity benches. The HUD (Task 16) is a **left sidebar** listing cash and
 carried wood/meat/gold plus the rescued counter — carried amounts always
 visible at the side of the screen, per user preference (supersedes "top-right
 HUD" above).
+
+### E. Art quality bar (user-directed)
+The first render pass read as too primitive next to the reference. Phase 1's
+look must hold up beside the ad's while staying procedural:
+
+- **Lighting:** shadows enabled (sun casts, ground/buildings receive), warm
+  key light + cool ambient, soft contact feel; brighter palette matched to
+  the reference (warm tan road, white-blue snow, saturated ice-blue trees).
+- **Trees:** layered look — 2–3 stacked ice-blue cones each capped with a
+  slightly larger white snow rim, chunky trunk; per-tree scale/rotation
+  variation from the seeded RNG; shared geometry.
+- **Character:** parka silhouette — hooded blue coat, white beard, stub arms,
+  visible held tool at proper scale; villagers get the same body with teal
+  coats; frozen villagers encased in translucent rounded ice.
+- **Bears:** rounder, larger, with leg stubs and a gray snout.
+- **World dressing:** picket fences lining the road and camp, snow-capped
+  rocks, scattered crates/log props, road with lighter border edging, round
+  soft snow particles (canvas sprite, not squares).
+- **Stations/pads:** ad-style circular bubble labels (icon + live count, small
+  pointer tail) above benches; unlock pads as gray rounded-card labels with
+  drawn icon + price; build sites as dashed-outline pads (canvas texture).
+- **Reference:** compare against the extracted ad frames side by side during
+  browser verification; the target is "same genre of polish", not identical.

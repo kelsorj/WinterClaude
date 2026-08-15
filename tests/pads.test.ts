@@ -97,4 +97,21 @@ describe('padsTick', () => {
     expect(Number.isInteger(state.player.carry.wood)).toBe(true);
     expect(state.pads[0].paid + state.player.carry.wood).toBe(8);
   });
+
+  it('does not bank charge while the player is broke', () => {
+    const state = blankState();
+    state.pads.push(aPad({ currency: 'wood', cost: 12, effect: { type: 'carry', add: 12 } }));
+    for (let i = 0; i < 60; i++) padsTick(state, 1 / 60); // a broke second on the pad
+    state.player.carry.wood = 12;
+    padsTick(state, 1 / 60);
+    expect(state.pads[0].paid).toBeLessThanOrEqual(1);
+  });
+
+  it('leaves cash dust-free after completing a cash pad', () => {
+    const state = blankState();
+    state.pads.push(aPad()); // cost 10
+    state.player.cash = 100;
+    for (let i = 0; i < 120; i++) padsTick(state, 1 / 60);
+    expect(state.player.cash).toBe(90);
+  });
 });

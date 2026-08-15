@@ -42,6 +42,7 @@ export function padsTick(state: GameState, dt: number): void {
       pay = Math.min(want, state.player.cash);
     } else {
       pad.payTimer += PAY_RATE * dt;
+      if (state.player.carry[pad.currency] <= 0) { pad.payTimer = 0; continue; }
       pay = Math.min(Math.floor(pad.payTimer), pad.cost - pad.paid, state.player.carry[pad.currency]);
       if (pay > 0) pad.payTimer -= pay;
     }
@@ -52,6 +53,7 @@ export function padsTick(state: GameState, dt: number): void {
       pad.paid = pad.cost;
       pad.done = true;
       applyEffect(state, pad);
+      state.player.cash = Math.round(state.player.cash * 1e6) / 1e6;
       state.events.push({ type: 'unlock', pos: v(pad.pos.x, pad.pos.z) });
     }
   }

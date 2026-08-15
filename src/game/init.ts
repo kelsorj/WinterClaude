@@ -1,0 +1,44 @@
+import { BEAR_HP, CARRY_BASE, CART_CAP, PLAYER_BASE_SPEED, SEAM_HP, TREE_HP } from '../content/balance';
+import {
+  DEPOT_POS, PLAYER_SPAWN, bearDefs, padDefs, railDefs, sawmillDefs, seamDefs,
+  stationDefs, treeDefs, turretDefs, villagerDefs,
+} from '../content/map';
+import { v } from './math';
+import type { GameState } from './state';
+
+export function createInitialState(): GameState {
+  return {
+    time: 0,
+    player: {
+      pos: v(PLAYER_SPAWN.x, PLAYER_SPAWN.z), facing: v(0, 1),
+      speed: PLAYER_BASE_SPEED, tool: 'hatchet', hasPickaxe: false,
+      carry: { wood: 0, meat: 0, gold: 0 }, carryCap: CARRY_BASE, cash: 0,
+      swingTimer: 0, knockback: v(0, 0),
+    },
+    trees: treeDefs().map((d, i) => ({ id: `tree${i}`, zone: d.zone, pos: d.pos, hp: TREE_HP, respawn: 0 })),
+    seams: seamDefs().map((d, i) => ({ id: `seam${i}`, zone: d.zone, pos: d.pos, hp: SEAM_HP, respawn: 0 })),
+    bears: bearDefs().map((d, i) => ({
+      id: `bear${i}`, zone: d.zone, pos: v(d.pos.x, d.pos.z), home: v(d.pos.x, d.pos.z),
+      hp: BEAR_HP, maxHp: BEAR_HP, state: 'sleep' as const, respawn: 0, attackCd: 0,
+    })),
+    drops: [],
+    pads: padDefs(),
+    stations: stationDefs(),
+    turrets: turretDefs(),
+    sawmills: sawmillDefs(),
+    rails: railDefs(),
+    carts: railDefs().map((r, i) => ({
+      id: `cart${i}`, railId: r.id, s: 0, dir: -1 as const, load: 0, cap: CART_CAP,
+    })),
+    depot: { wood: 0, meat: 0, gold: 0 },
+    depotPos: v(DEPOT_POS.x, DEPOT_POS.z),
+    villagers: villagerDefs().map((p, i) => ({
+      id: `vil${i}`, pos: v(p.x, p.z), state: 'frozen' as const, carrying: null, amount: 0,
+    })),
+    zonesOpen: { start: true, deepforest: false, hunting: false, quarry: false },
+    rescued: 0, won: false,
+    stats: { chops: 0, bearsKilled: 0, earned: 0 },
+    events: [],
+    nextDropId: 1,
+  };
+}

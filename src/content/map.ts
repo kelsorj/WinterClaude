@@ -12,7 +12,8 @@ export const ZONE_RECTS: Record<GateZone, Rect> = {
 
 export const PLAYER_SPAWN: Vec2 = v(0, 0);
 export const DEPOT_POS: Vec2 = v(18, 0);
-export const CAMP_POS: Vec2 = v(0, 2);
+/** Where thawed villagers walk to: the camp building's entrance, just west of the depot. */
+export const CAMP_POS: Vec2 = v(14, 0);
 
 /**
  * The forest is finite: nothing regrows, so it has to be big enough that the whole campaign's

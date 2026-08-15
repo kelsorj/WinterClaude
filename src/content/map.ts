@@ -1,7 +1,51 @@
-import { dist, makeRng, v, type Rect, type Vec2 } from '../game/math';
+import { dist, inRect, makeRng, v, type Rect, type Vec2 } from '../game/math';
 import type { GateZone, Pad, Rail, Sawmill, SellStation, Turret, ZoneId } from '../game/state';
 
-export const WORLD_BOUNDS: Rect = { x0: -60, z0: -40, x1: 60, z1: 40 };
+/**
+ * The 10× world (Amendment 3B). Everything the campaign is made of — camp, road, gated zones,
+ * rails, fences, the villager field — stays exactly where it was authored, inside `ORIGINAL_MAP`;
+ * these bounds add open snowy wilderness in a ring around it.
+ */
+export const WORLD_BOUNDS: Rect = { x0: -190, z0: -125, x1: 190, z1: 125 };
+
+/** The area the campaign occupies. Wilderness scatter fills in around it, never inside it. */
+export const ORIGINAL_MAP: Rect = { x0: -60, z0: -40, x1: 60, z1: 40 };
+
+/**
+ * Half-width of the road corridor left clear of wilderness scenery. The road now runs the full
+ * width of the map, so this reaches out to both far edges: it is the strip the player and the
+ * shoppers walk down, not just the paved part (ROAD_Z = 7 plus a verge).
+ */
+const ROAD_CLEAR = 10;
+
+/** Where the wilderness scatter is allowed to put things. */
+function inWilderness(p: Vec2): boolean {
+  if (Math.abs(p.z) < ROAD_CLEAR) return false;
+  if (inRect(p, ORIGINAL_MAP)) return false;
+  // Wilderness entities are all zone 'start', so they must clear every gated rect — those are
+  // inside ORIGINAL_MAP today, but this keeps the invariant true if a rect ever grows.
+  for (const rect of Object.values(ZONE_RECTS)) if (inRect(p, rect)) return false;
+  return true;
+}
+
+/**
+ * Fill the wilderness on a jittered grid. The RNG is drawn before any rejection test so the
+ * layout stays identical however the exclusions move — a scatter that only consumes randomness
+ * for accepted points reshuffles the whole world when one rect changes.
+ */
+function scatterWilderness(
+  rng: () => number, step: number, jitter: number,
+): { pos: Vec2; zone: ZoneId }[] {
+  const out: { pos: Vec2; zone: ZoneId }[] = [];
+  const inset = jitter + 2;
+  for (let x = WORLD_BOUNDS.x0 + inset; x <= WORLD_BOUNDS.x1 - inset; x += step) {
+    for (let z = WORLD_BOUNDS.z0 + inset; z <= WORLD_BOUNDS.z1 - inset; z += step) {
+      const p = v(x + (rng() - 0.5) * jitter, z + (rng() - 0.5) * jitter);
+      if (inWilderness(p)) out.push({ zone: 'start', pos: p });
+    }
+  }
+  return out;
+}
 
 /** Rectangles that block movement until their zone is opened. */
 export const ZONE_RECTS: Record<GateZone, Rect> = {
@@ -22,8 +66,13 @@ export const CAMP_POS: Vec2 = v(18, 4.4);
 
 /**
  * The forest is finite: nothing regrows, so it has to be big enough that the whole campaign's
- * wood costs come out of it with room to spare (~295 trees × 2 logs). Every jitter range is
- * chosen so start-zone trees stay clear of the gated rects and gated trees stay inside theirs.
+ * wood costs come out of it with room to spare. Every jitter range is chosen so start-zone trees
+ * stay clear of the gated rects and gated trees stay inside theirs.
+ *
+ * The first four stands are the original map's, unchanged — they are what the campaign is
+ * balanced against. The wilderness scatter on top of them (Amendment 3B) is scenery: a ~5-unit
+ * grid over everything outside `ORIGINAL_MAP`, sparser than the starter forest so the ring reads
+ * as open country rather than more of the same wall of trees.
  */
 export function treeDefs(): { pos: Vec2; zone: ZoneId }[] {
   const rng = makeRng(42);
@@ -44,8 +93,19 @@ export function treeDefs(): { pos: Vec2; zone: ZoneId }[] {
   for (let i = 0; i < 4; i++)
     for (const z of [8.5, 18.5, 29.5])
       defs.push({ zone: 'hunting', pos: v(32 + i * 6 + rng() * 1.2, z + rng() * 1.2) });
+  defs.push(...scatterWilderness(makeRng(1337), 5.0, 3.2));
   return defs;
 }
+
+/**
+ * Wilderness bear packs (Amendment 3B). Hand-placed rather than scattered so the homes stay well
+ * spaced — a pack that lands on top of another turns a ring of territories into one mob — and so
+ * none of them sits astride the road the player walks out on.
+ */
+const BEAR_PACKS: Vec2[] = [
+  v(-150, -95), v(-70, -100), v(20, -105), v(110, -90), v(165, -55), v(-160, -30),
+  v(160, 60), v(95, 100), v(0, 105), v(-90, 95), v(-165, 55),
+];
 
 export function bearDefs(): { pos: Vec2; zone: ZoneId }[] {
   const rng = makeRng(7);
@@ -56,13 +116,34 @@ export function bearDefs(): { pos: Vec2; zone: ZoneId }[] {
     defs.push({ zone: 'deepforest', pos: v(34 + i * 5 + rng() * 3, -12 + rng() * 4) });
   for (let i = 0; i < 8; i++)
     defs.push({ zone: 'hunting', pos: v(33 + (i % 4) * 7 + rng() * 3, 12 + Math.floor(i / 4) * 10 + rng() * 3) });
+  for (const home of BEAR_PACKS) {
+    const size = 3 + Math.floor(rng() * 3); // 3-5 to a pack
+    for (let i = 0; i < size; i++) {
+      defs.push({
+        zone: 'start',
+        pos: v(home.x + (rng() - 0.5) * 8, home.z + (rng() - 0.5) * 8),
+      });
+    }
+  }
   return defs;
 }
+
+/**
+ * Wilderness gold outcrops (Amendment 3B): open-zone seams, so they need only the pickaxe rather
+ * than the quarry gate. Spread right around the ring so a walk in any direction finds one, and
+ * kept well off the road.
+ */
+const OUTCROPS: Vec2[] = [
+  v(-120, -60), v(-40, -80), v(45, -95), v(120, -70), v(170, -25), v(-100, -25),
+  v(150, 45), v(70, 85), v(-15, 95), v(-95, 70), v(-170, 35), v(100, 25),
+  v(-140, 100), v(140, -110),
+];
 
 export function seamDefs(): { pos: Vec2; zone: ZoneId }[] {
   const defs: { pos: Vec2; zone: ZoneId }[] = [];
   for (let i = 0; i < 6; i++)
     defs.push({ zone: 'quarry', pos: v(-54 + (i % 3) * 9, -28 + Math.floor(i / 3) * 12) });
+  for (const pos of OUTCROPS) defs.push({ zone: 'start', pos });
   return defs;
 }
 

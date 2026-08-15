@@ -7,15 +7,15 @@ import { hash01 } from '../game/math';
 import type { Rect, Vec2 } from '../game/math';
 import type { GameEvent, GameState, GateZone, SellStation } from '../game/state';
 import type {
-  BearRefs, CartRefs, CustomerRefs, PadRefs, PlayerRefs, SawmillRefs, TreeRefs, VillagerRefs,
+  BearRefs, CartRefs, CustomerRefs, PadRefs, PlayerRefs, SawmillRefs, VillagerRefs,
 } from './meshes';
 import {
   BEAR_BODY_SCALE, CAMP_TIERS, COLORS, CUSTOMER_COATS, SHARED, bubbleTexture, lam, makeBear,
   makeBench, makeCampTier, makeCarryBox, makeCart, makeCrate, makeCustomer, makeDropMesh,
   makeFenceRun, makeGateWall, makeIconTextLabel, makeMatMesh, makePadLabel, makePadMesh,
   makePileStack, makePlayer, makeRailMesh, makeRock, makeSawmill, makeSeam, makeSlab,
-  makeBubbleLabel, makeTextLabel, makeTool, makeTree, makeTurret, makeVillager, refsOf,
-  snowflakeTexture,
+  makeBubbleLabel, makeTextLabel, makeTool, makeTurret, makeVillager, refsOf,
+  snowflakeTexture, treeGeometries, treeMaterial,
 } from './meshes';
 
 const CAM_OFFSET = new THREE.Vector3(16, 20, 16);
@@ -36,6 +36,28 @@ const HIT_FLASH_TIME = 0.3;
 const COAT_BASE = new THREE.Color(COLORS.playerCoat);
 const COAT_HIT = new THREE.Color(0xff3b30);
 const FENCE_FROM = -44, FENCE_TO = 44;
+/** Half-extent of the snowfall volume carried along with the camera, and how high it starts. */
+const SNOW_HALF = 42, SNOW_TOP = 26;
+/** How far the ground slab runs past the walkable bounds — beyond the fog's far plane. */
+const GROUND_MARGIN = 110;
+
+/**
+ * What a tree's instance pair is currently showing. Both instanced meshes hold an entry for
+ * every tree, so exactly one of the two carries a real matrix and the other a zero scale.
+ */
+const enum TreeVisual { Unset = 0, Hidden = 1, Standing = 2, Stump = 3 }
+
+/** Parked matrix for a tree instance that is not currently showing: scale 0 draws nothing. */
+const HIDDEN_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
+const UP = new THREE.Vector3(0, 1, 0);
+
+/** Wrap `val` into the window of half-width `half` centred on `centre`, however far out it is. */
+function wrapAround(val: number, centre: number, half: number): number {
+  const d = val - centre;
+  if (Math.abs(d) <= half) return val;
+  const span = half * 2;
+  return centre + (((d + half) % span + span) % span) - half;
+}
 
 interface FloatingText { sprite: THREE.Sprite; life: number }
 /** A stretch of road edge that must stay open: a bench, a pad, a rail crossing, the camp. */
@@ -48,6 +70,9 @@ interface FenceGap { x: number; z: number; half: number }
  */
 function disposeSubtree(root: THREE.Object3D): void {
   root.traverse((obj) => {
+    // An InstancedMesh owns a per-instance matrix buffer on top of its (here shared) geometry,
+    // and nothing in the traversal below reaches it: only `dispose()` releases it.
+    if ((obj as Partial<THREE.InstancedMesh>).isInstancedMesh) (obj as THREE.InstancedMesh).dispose();
     const withGeo = obj as Partial<THREE.Mesh>;
     // Every THREE.Sprite draws off one module-level geometry owned by three.js itself. It is not
     // in SHARED and it is not ours to free — disposing it would pull the buffer out from under
@@ -85,10 +110,18 @@ export class Renderer {
   /** Shoppers come and go constantly, so they get their own spawn/despawn map like drops. */
   private customerMeshes = new Map<string, THREE.Object3D>();
   private gates = new Map<GateZone, THREE.Object3D>();
+  /** The whole forest, as two instanced draws. Index into both is `treeIndex.get(tree.id)`. */
+  private standingTrees: THREE.InstancedMesh | null = null;
+  private stumpTrees: THREE.InstancedMesh | null = null;
+  private treeIndex = new Map<string, number>();
+  private treeVisual = new Uint8Array(0);
   private floats: FloatingText[] = [];
   private snowLayers: THREE.Points[] = [];
   private target = new THREE.Vector3();
   private scratch = new THREE.Vector3();
+  private treeMatrix = new THREE.Matrix4();
+  private treeSpin = new THREE.Quaternion();
+  private treeScale = new THREE.Vector3();
   private t = 0;
   private floatSeq = 0;
   private lastToolKey = '';
@@ -129,7 +162,9 @@ export class Renderer {
 
   private buildWorld(): void {
     this.scene.background = new THREE.Color(0xe6f1fa);
-    this.scene.fog = new THREE.Fog(0xe6f1fa, 70, 160);
+    // Pushed out for the 10× world: at the old 70/160 the wilderness dissolved into haze barely
+    // past the camp, which read as a small map in a fog bank rather than a big one.
+    this.scene.fog = new THREE.Fog(0xe6f1fa, 90, 200);
     // Cool sky bounce over warm snow-lit ground, plus a warm key that actually casts. The fill
     // is kept well under the key so shadows stay legible instead of washing out.
     this.scene.add(new THREE.HemisphereLight(0xdcefff, 0xc9b08e, 0.52));
@@ -146,14 +181,20 @@ export class Renderer {
     this.scene.add(sun, sun.target);
     this.sun = sun;
 
-    const ground = setShadow(makeSlab(240, 0.1, 160, COLORS.snow), false, true);
+    // Sized off the world bounds plus a margin wide enough that the ground's own edge is out
+    // past the fog when you stand at the far corner: walking to the boundary should read as
+    // country receding into haze, not as the lip of a table. Two triangles either way.
+    const worldW = (WORLD_BOUNDS.x1 - WORLD_BOUNDS.x0) + GROUND_MARGIN * 2;
+    const worldD = (WORLD_BOUNDS.z1 - WORLD_BOUNDS.z0) + GROUND_MARGIN * 2;
+    const ground = setShadow(makeSlab(worldW, 0.1, worldD, COLORS.snow), false, true);
     ground.position.y = -0.05;
     this.scene.add(ground);
-    const road = setShadow(makeSlab(140, 0.06, ROAD_Z * 2, COLORS.road), false, true);
+    // The road runs the full width of the 10× world (Amendment 3B), not just the camp's stretch.
+    const road = setShadow(makeSlab(worldW, 0.06, ROAD_Z * 2, COLORS.road), false, true);
     road.position.y = 0.01;
     this.scene.add(road);
     for (const sz of [-1, 1]) {
-      const edge = makeSlab(140, 0.05, 0.9, COLORS.roadEdge);
+      const edge = makeSlab(worldW, 0.05, 0.9, COLORS.roadEdge);
       edge.position.set(0, 0.025, sz * (ROAD_Z - 0.45));
       this.scene.add(edge);
     }
@@ -193,16 +234,20 @@ export class Renderer {
     }
   }
 
-  /** Three layers of round soft flakes; one Points per size keeps it to three draw calls. */
+  /**
+   * Three layers of round soft flakes; one Points per size keeps it to three draw calls. The
+   * volume is only ±`SNOW_HALF` across — covering the whole 10× world at this density would cost
+   * a hundred thousand particles — so `render` carries it along with the camera instead.
+   */
   private buildSnow(): void {
     this.snowLayers = [];
     for (const [count, size] of [[260, 0.26], [200, 0.38], [140, 0.55]] as const) {
       const geo = new THREE.BufferGeometry();
       const pos = new Float32Array(count * 3);
       for (let i = 0; i < count; i++) {
-        pos[i * 3] = -60 + Math.random() * 120;
-        pos[i * 3 + 1] = Math.random() * 26;
-        pos[i * 3 + 2] = -40 + Math.random() * 80;
+        pos[i * 3] = (Math.random() - 0.5) * SNOW_HALF * 2;
+        pos[i * 3 + 1] = Math.random() * SNOW_TOP;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * SNOW_HALF * 2;
       }
       geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       const points = new THREE.Points(geo, new THREE.PointsMaterial({
@@ -313,8 +358,76 @@ export class Renderer {
     this.scene.add(field);
   }
 
+  /**
+   * The forest, as two `InstancedMesh` — standing trees and stumps — off the two merged tree
+   * buffers. At ~3,250 trees the old one-Group-per-tree approach put 9,750 objects in the scene
+   * graph for three-js to walk and cull every frame; this is two draws and two culls, with the
+   * same deterministic per-tree scale and spin baked into each instance matrix.
+   *
+   * Both meshes carry an entry for every tree so an id maps to one index in both, and the state
+   * a tree is NOT in is parked at zero scale (a degenerate instance draws nothing and casts no
+   * shadow). Felling a tree is then two matrix writes at one index.
+   */
+  private buildForest(state: GameState): void {
+    const geo = treeGeometries();
+    const mat = treeMaterial();
+    const count = state.trees.length;
+    this.standingTrees = new THREE.InstancedMesh(geo.full, mat, count);
+    this.stumpTrees = new THREE.InstancedMesh(geo.stump, mat, count);
+    this.treeIndex.clear();
+    this.treeVisual = new Uint8Array(count);
+    for (const inst of [this.standingTrees, this.stumpTrees]) {
+      inst.castShadow = true;
+      inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      // three derives an InstancedMesh's bounding sphere from the instance matrices ONCE and
+      // caches it. The stump mesh starts with every instance parked at zero scale on the origin,
+      // so that cached sphere is a point at the origin and every stump the player cuts anywhere
+      // else gets frustum-culled out of existence. Both meshes span the whole world and would
+      // never be culled anyway, so the mesh-level test is simply switched off.
+      inst.frustumCulled = false;
+      this.scene.add(inst);
+    }
+    for (let i = 0; i < count; i++) this.treeIndex.set(state.trees[i].id, i);
+    this.syncTrees(state);
+  }
+
+  /** Push every tree whose visible state changed into both instance matrices. */
+  private syncTrees(state: GameState): void {
+    const standing = this.standingTrees, stumps = this.stumpTrees;
+    if (!standing || !stumps) return;
+    let dirty = false;
+    for (let i = 0; i < state.trees.length; i++) {
+      const tree = state.trees[i];
+      const want = !state.zonesOpen[tree.zone]
+        ? TreeVisual.Hidden
+        : tree.respawn === 0 ? TreeVisual.Standing : TreeVisual.Stump;
+      if (this.treeVisual[i] === want) continue;
+      this.treeVisual[i] = want;
+      dirty = true;
+      if (want === TreeVisual.Hidden) {
+        standing.setMatrixAt(i, HIDDEN_MATRIX);
+        stumps.setMatrixAt(i, HIDDEN_MATRIX);
+        continue;
+      }
+      const s = 0.85 + hash01(`${tree.id}size`) * 0.4;
+      this.treeMatrix.compose(
+        this.scratch.set(tree.pos.x, 0, tree.pos.z),
+        this.treeSpin.setFromAxisAngle(UP, hash01(`${tree.id}rot`) * Math.PI * 2),
+        this.treeScale.set(s, s, s),
+      );
+      const shown = want === TreeVisual.Standing ? standing : stumps;
+      const hidden = want === TreeVisual.Standing ? stumps : standing;
+      shown.setMatrixAt(i, this.treeMatrix);
+      hidden.setMatrixAt(i, HIDDEN_MATRIX);
+    }
+    if (!dirty) return;
+    standing.instanceMatrix.needsUpdate = true;
+    stumps.instanceMatrix.needsUpdate = true;
+  }
+
   /** Build once-per-game meshes from state (stations, pads, machines, rails, gates, fences). */
   buildStatic(state: GameState): void {
+    this.buildForest(state);
     for (const st of state.stations) {
       const bench = setShadow(makeBench(), true);
       bench.position.set(st.pos.x, 0, st.pos.z);
@@ -375,6 +488,12 @@ export class Renderer {
     this.meshes.clear();
     this.dropMeshes.clear();
     this.customerMeshes.clear();
+    // The instanced meshes were disposed by the traversal above; drop the index alongside them
+    // so a rebuild cannot address a freed buffer.
+    this.standingTrees = null;
+    this.stumpTrees = null;
+    this.treeIndex.clear();
+    this.treeVisual = new Uint8Array(0);
     this.gates.clear();
     this.stationBubbles.clear();
     this.lastStock.clear();
@@ -405,24 +524,7 @@ export class Renderer {
   sync(state: GameState, dt: number): void {
     this.t += dt;
     this.syncPlayer(state, dt);
-    for (const tree of state.trees) {
-      // Trees never move: place once with its deterministic size/spin, then freeze the matrix
-      // and only toggle visibility.
-      const m = this.ensure(tree.id, () => {
-        const g = makeTree();
-        g.position.set(tree.pos.x, 0, tree.pos.z);
-        g.rotation.y = hash01(`${tree.id}rot`) * Math.PI * 2;
-        g.scale.setScalar(0.85 + hash01(`${tree.id}size`) * 0.4);
-        setShadow(g, true);
-        g.updateMatrix();
-        g.matrixAutoUpdate = false;
-        return g;
-      });
-      m.visible = state.zonesOpen[tree.zone];
-      const refs = refsOf<TreeRefs>(m);
-      refs.full.visible = tree.respawn === 0;
-      refs.stump.visible = tree.respawn > 0;
-    }
+    this.syncTrees(state);
     for (const seam of state.seams) {
       const m = this.ensure(seam.id, () => setShadow(makeSeam(), true));
       m.position.set(seam.pos.x, 0, seam.pos.z);
@@ -750,13 +852,18 @@ export class Renderer {
         this.floats.splice(i, 1);
       }
     }
+    // Flakes stay in world space — they fall past the scenery with real parallax — but any that
+    // the camera has left behind wrap round to the other side of the volume, so the snowfall
+    // travels with the player across a world far larger than the particle budget covers.
     for (let layer = 0; layer < this.snowLayers.length; layer++) {
       const pos = this.snowLayers[layer].geometry.getAttribute('position') as THREE.BufferAttribute;
       const fall = dt * (1.4 + layer * 0.7);
       for (let i = 0; i < pos.count; i++) {
         let y = pos.getY(i) - fall;
-        if (y < 0) y = 26;
+        if (y < 0) y = SNOW_TOP;
         pos.setY(i, y);
+        pos.setX(i, wrapAround(pos.getX(i), this.target.x, SNOW_HALF));
+        pos.setZ(i, wrapAround(pos.getZ(i), this.target.z, SNOW_HALF));
       }
       pos.needsUpdate = true;
     }

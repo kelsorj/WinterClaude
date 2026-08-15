@@ -448,8 +448,6 @@ export function refsOf<T>(o: THREE.Object3D): T {
 // Trees
 // ---------------------------------------------------------------------------
 
-export interface TreeRefs { full: THREE.Object3D; stump: THREE.Object3D }
-
 /**
  * Conifer tiers, bottom to top: an ice-blue cone, then a white snow cone whose base flares wider
  * than the blue cone is at that height. The flare is what you actually see — it rings each tier
@@ -480,14 +478,16 @@ const conePart = (r: number, h: number, cy: number, hex: number): THREE.BufferGe
   part(GEO.unitCone, new THREE.Matrix4().makeScale(r * 2, h, r * 2).setPosition(0, cy, 0), hex);
 
 /**
- * The forest is by far the biggest thing on screen (295 trees), so a tree is baked down to ONE
- * merged, vertex-coloured buffer instead of seven separate meshes. Every tree in the world then
- * shares that single buffer and costs a single draw call, varying only by scale and rotation.
+ * The forest is by far the biggest thing on screen (~3,250 trees since the 10× world), so a tree
+ * is baked down to ONE merged, vertex-coloured buffer instead of seven separate meshes. The
+ * renderer draws the whole forest as two `InstancedMesh` off these two buffers — standing trees
+ * and stumps — so the entire wilderness costs two draw calls and varies only by per-instance
+ * scale and rotation.
  */
 let treeGeo: { full: THREE.BufferGeometry; stump: THREE.BufferGeometry } | null = null;
 let treeMat: THREE.MeshLambertMaterial | null = null;
 
-function treeParts(): { full: THREE.BufferGeometry; stump: THREE.BufferGeometry } {
+export function treeGeometries(): { full: THREE.BufferGeometry; stump: THREE.BufferGeometry } {
   if (treeGeo) return treeGeo;
   const blues = [COLORS.foliage, COLORS.foliage2, COLORS.foliage3];
   const full = [part(GEO.treeTrunk, new THREE.Matrix4().makeTranslation(0, 0.6, 0), COLORS.trunk)];
@@ -505,21 +505,9 @@ function treeParts(): { full: THREE.BufferGeometry; stump: THREE.BufferGeometry 
   return treeGeo;
 }
 
-function treeMaterial(): THREE.MeshLambertMaterial {
+export function treeMaterial(): THREE.MeshLambertMaterial {
   if (!treeMat) treeMat = reg(new THREE.MeshLambertMaterial({ vertexColors: true }));
   return treeMat;
-}
-
-export function makeTree(): THREE.Group {
-  const g = new THREE.Group();
-  const geo = treeParts();
-  const mat = treeMaterial();
-  const full = new THREE.Mesh(geo.full, mat);
-  const stump = new THREE.Mesh(geo.stump, mat);
-  g.add(full, stump);
-  g.userData.refs = { full, stump } satisfies TreeRefs;
-  freezeChildren(g);
-  return g;
 }
 
 // ---------------------------------------------------------------------------

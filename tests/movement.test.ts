@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { intentFrom, type InputState } from '../src/game/input';
 import { movePlayer } from '../src/game/systems/movement';
+import { WORLD_BOUNDS } from '../src/content/map';
 import { v } from '../src/game/math';
 import { blankState } from './helpers';
 
@@ -65,12 +66,16 @@ describe('movePlayer', () => {
 
   it('clamps to world bounds', () => {
     const state = blankState();
-    state.player.pos = v(59, 0);
+    state.player.pos = v(WORLD_BOUNDS.x1 - 1, 0);
     movePlayer(state, v(1, 0), 10);
-    expect(state.player.pos.x).toBe(60);
+    expect(state.player.pos.x).toBe(WORLD_BOUNDS.x1);
+    movePlayer(state, v(0, -1), 100);
+    expect(state.player.pos.z).toBe(WORLD_BOUNDS.z0);
   });
 
-  it('blocks sneaking along the world edge through closed zones', () => {
+  // Since the 10× world this is a zone's edge rather than the map's — the gated rects now sit in
+  // open country, so the player can walk right around them but still not into them.
+  it('blocks sneaking along a sealed zone edge into it', () => {
     const state = blankState();
     state.player.pos = v(60, 0);
     for (let i = 0; i < 600; i++) movePlayer(state, v(0, -1), 1 / 60); // press toward deepforest for 10s

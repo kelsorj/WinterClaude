@@ -2,17 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../src/game/init';
 import { MINER_CAMP_TIER, PAD_RANGE, SELL_RATE, TREE_YIELD, thawCost } from '../src/content/balance';
 import type { ZoneId } from '../src/game/state';
-import { ZONE_RECTS } from '../src/content/map';
+import { ORIGINAL_MAP, WORLD_BOUNDS, ZONE_RECTS, villagerDefs } from '../src/content/map';
 import { dist, inRect } from '../src/game/math';
 
 describe('createInitialState', () => {
   const state = createInitialState();
 
   it('spawns the expected entity populations', () => {
-    expect(state.trees.length).toBeGreaterThanOrEqual(250); // finite forest: no respawns
+    // The 10× world (Amendment 3B): a wilderness ring on top of the original map's stands.
+    expect(state.trees.length).toBeGreaterThanOrEqual(2400); // finite forest: no respawns
+    expect(state.trees.length).toBeLessThanOrEqual(3500);    // and an instanced-draw budget
     expect(state.pads.length).toBe(18);
-    expect(state.bears.length).toBeGreaterThanOrEqual(15);
-    expect(state.seams.length).toBe(6);
+    expect(state.bears.length).toBeGreaterThanOrEqual(55);
+    expect(state.seams.length).toBeGreaterThanOrEqual(18);
     expect(state.villagers.filter((v) => v.kind === 'rescued').length).toBe(40);
     expect(state.villagers.filter((v) => v.kind === 'crew').length).toBe(3);
     expect(state.villagers.filter((v) => v.kind === 'miner').length).toBe(2);
@@ -156,6 +158,35 @@ describe('createInitialState', () => {
       if (e.zone !== 'start') continue;
       for (const rect of Object.values(ZONE_RECTS)) expect(inRect(e.pos, rect)).toBe(false);
     }
+  });
+
+  it('keeps the wilderness inside the world, off the road and out of the villager field', () => {
+    const scenery = [...state.trees, ...state.bears, ...state.seams];
+    for (const e of scenery) expect(inRect(e.pos, WORLD_BOUNDS)).toBe(true);
+
+    const wilderness = scenery.filter((e) => !inRect(e.pos, ORIGINAL_MAP));
+    expect(wilderness.length).toBeGreaterThan(2000);
+    for (const e of wilderness) {
+      expect(Math.abs(e.pos.z)).toBeGreaterThan(9); // clear of the road the shoppers walk
+      expect(e.zone).toBe('start');                 // open country: no gate stands between
+    }
+
+    // Nothing may land in the snowfield the frozen villagers are laid out in.
+    const field = villagerDefs();
+    const bound = {
+      x0: Math.min(...field.map((p) => p.x)) - 3, x1: Math.max(...field.map((p) => p.x)) + 3,
+      z0: Math.min(...field.map((p) => p.z)) - 3, z1: Math.max(...field.map((p) => p.z)) + 3,
+    };
+    for (const e of scenery) expect(inRect(e.pos, bound)).toBe(false);
+  });
+
+  it('puts gold outcrops out in the open, not only behind the quarry gate', () => {
+    const open = state.seams.filter((s) => s.zone === 'start');
+    expect(open.length).toBeGreaterThanOrEqual(12);
+    // They need the pickaxe, not a gate — so none of them may sit inside a gated rect.
+    for (const seam of open)
+      for (const rect of Object.values(ZONE_RECTS)) expect(inRect(seam.pos, rect)).toBe(false);
+    expect(state.seams.filter((s) => s.zone === 'quarry')).toHaveLength(6);
   });
 
   it('gate pads sit outside the zone they open', () => {

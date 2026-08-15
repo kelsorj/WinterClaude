@@ -1,4 +1,4 @@
-import { drawIcon, type IconKind } from '../render/meshes';
+import { drawIcon, drawSpeaker, type IconKind } from '../render/meshes';
 import type { Currency, GameState } from '../game/state';
 
 export interface UICallbacks {
@@ -9,7 +9,11 @@ export interface UICallbacks {
 
 export interface UIHandles {
   showPause(show: boolean): void;
-  /** Keep the pause-menu button label in sync when mute is toggled by the M key. */
+  /**
+   * The one place the muted flag is rendered. The M key, the pause-menu button and the sidebar
+   * speaker all toggle audio and then land here, so no two of them can ever disagree about what
+   * the game is doing (Amendment 4D).
+   */
   setMuted(muted: boolean): void;
   /** Drop win-screen state so a fresh camp can win again. */
   reset(): void;
@@ -24,7 +28,7 @@ const ICON_PX = 26;
  * sidebar is the same unmistakable gold bar seen on the bench bubbles (spec Amendment 1C/1D).
  * Emoji were dropped for exactly this reason: they render as grey blobs on some platforms.
  */
-function iconCanvas(kind: IconKind): HTMLCanvasElement {
+function blankIconCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(ICON_PX * dpr);
@@ -33,6 +37,11 @@ function iconCanvas(kind: IconKind): HTMLCanvasElement {
   canvas.style.height = `${ICON_PX}px`;
   const ctx = canvas.getContext('2d')!;
   ctx.scale(dpr, dpr);
+  return { canvas, ctx };
+}
+
+function iconCanvas(kind: IconKind): HTMLCanvasElement {
+  const { canvas, ctx } = blankIconCanvas();
   drawIcon(ctx, kind, ICON_PX / 2, ICON_PX / 2, ICON_PX * 0.86);
   return canvas;
 }
@@ -51,14 +60,21 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
     hud.appendChild(row);
     rows.set(key, { el: row, value, prev: 0 });
   }
+  // The mute toggle closes the sidebar: always visible, so the player can see at a glance whether
+  // the game is meant to be silent instead of discovering it through the pause menu (4D).
+  const soundBtn = document.createElement('button');
+  soundBtn.className = 'iconbtn';
+  soundBtn.type = 'button';
+  const sound = blankIconCanvas();
+  soundBtn.appendChild(sound.canvas);
+  soundBtn.addEventListener('click', () => setMuted(cb.onToggleMute()));
+  hud.appendChild(soundBtn);
   document.body.appendChild(hud);
 
   const pause = overlay();
   const pausePanel = panel('Paused');
   pausePanel.appendChild(button('Resume', () => cb.onResume()));
-  const muteBtn = button(initialMuted ? 'Unmute (M)' : 'Mute (M)', () => {
-    setMuted(cb.onToggleMute());
-  });
+  const muteBtn = button('Mute (M)', () => setMuted(cb.onToggleMute()));
   muteBtn.classList.add('secondary');
   pausePanel.appendChild(muteBtn);
   const restartBtn = button('Restart camp', () => {
@@ -79,8 +95,19 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
   // A save that was already won must not re-announce the win on every reload.
   let winShown = initialWon;
 
+  /**
+   * The single place the muted flag becomes pixels. Every route that toggles audio — the M key
+   * (via `main.ts`), the pause-menu button and the sidebar speaker — calls this with the new
+   * flag, so the two controls can never drift out of step with each other or with the audio.
+   */
   function setMuted(muted: boolean): void {
     muteBtn.textContent = muted ? 'Unmute (M)' : 'Mute (M)';
+    sound.ctx.clearRect(0, 0, ICON_PX, ICON_PX);
+    drawSpeaker(sound.ctx, muted, ICON_PX / 2, ICON_PX / 2, ICON_PX * 0.86);
+    const label = muted ? 'Unmute (M)' : 'Mute (M)';
+    soundBtn.title = label;
+    soundBtn.setAttribute('aria-label', label);
+    soundBtn.setAttribute('aria-pressed', String(muted));
   }
 
   function update(state: GameState): void {
@@ -109,6 +136,9 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
       win.classList.remove('hidden');
     }
   }
+
+  // Both controls start from the same call, rather than each seeding its own initial look.
+  setMuted(initialMuted);
 
   return {
     showPause: (show: boolean) => pause.classList.toggle('hidden', !show),

@@ -58,6 +58,16 @@ export const PLAYER_SPAWN: Vec2 = v(0, 0);
 export const DEPOT_POS: Vec2 = v(18, 0);
 
 /**
+ * The ground the camp building stands on, centred on the depot. This is the Grand Fort's plan —
+ * ±4.3 in both axes, mirroring `campGrandFort`'s outermost log courses in `meshes.ts` — which is
+ * the largest of the five tiers, so anything that clears this rect clears the camp at every tier.
+ * Nothing may be routed through it: the fort is a solid building, not scenery.
+ */
+export const CAMP_FOOTPRINT: Rect = {
+  x0: DEPOT_POS.x - 4.3, z0: -4.3, x1: DEPOT_POS.x + 4.3, z1: 4.3,
+};
+
+/**
  * The forest is finite: nothing regrows, so it has to be big enough that the whole campaign's
  * wood costs come out of it with room to spare. Every jitter range is chosen so start-zone trees
  * stay clear of the gated rects and gated trees stay inside theirs.
@@ -177,8 +187,26 @@ export function stationDefs(): SellStation[] {
  * appear out of nothing, and it is what the shop economy is tuned around: the ~12 s walk down
  * the road is what sets how many shoppers are on the map at once (see CUSTOMER_QUEUE_CAP).
  * Pushing them to ±188 would triple that walk and, with it, the on-screen crowd.
+ *
+ * The east end's z is the one number here with a hard constraint on it. Only the gold bench draws
+ * from that end, and its shoppers walk the whole way from x = 58 to the bench's walk-in lane at
+ * x ≈ 4.4 at a constant z — a line that passes straight through the camp at x ∈ [13.7, 22.3].
+ * At the old z = -2 they walked through the Fort's walls. The lanes now thread the gap between
+ * `CAMP_FOOTPRINT`'s south face (z = -4.3) and the road's south edge (z = -7):
+ *
+ *     arrivals   z = -6.25 ± 0.5  →  [-6.75, -5.75]
+ *     departures z = -5.05 ± 0.5  →  [-5.55, -4.55]   (arrivals + ROAD_LANE_OFFSET)
+ *
+ * which leaves a quarter-unit either side — the widest the two lanes plus their jitter can be
+ * spaced inside a 2.7-unit corridor. They cross the p-camp3 and p-gate-deep pads on the way,
+ * which is cosmetic: pads only ever answer to the player.
+ *
+ * The west end needs no such care. Its lanes (z = 2 and 3.2) do sit inside the camp's z range,
+ * but its shoppers serve the wood and meat benches at x ≤ 0 and turn off the road at x ≈ -3.6 at
+ * the furthest east, so they never reach the camp's x range at all. `customers.test.ts` checks
+ * the actual walked positions against the footprint rather than trusting that argument.
  */
-export const ROAD_ENDS: Vec2[] = [v(-58, 2), v(58, -2)];
+export const ROAD_ENDS: Vec2[] = [v(-58, 2), v(58, -6.25)];
 
 /**
  * How far a departing shopper's road lane sits from the arriving lane it walks beside. Both

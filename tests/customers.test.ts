@@ -3,8 +3,11 @@ import { customersTick } from '../src/game/systems/customers';
 import {
   CUSTOMER_INTERVAL, CUSTOMER_QUEUE_CAP, CUSTOMER_TAKE, SELL_RATE,
 } from '../src/content/balance';
-import { nearestRoadEnd, queueAnchor } from '../src/content/map';
-import { v } from '../src/game/math';
+import {
+  CAMP_FOOTPRINT, ROAD_ENDS, nearestRoadEnd, queueAnchor, roadLaneZ,
+} from '../src/content/map';
+import { createInitialState } from '../src/game/init';
+import { inRect, v } from '../src/game/math';
 import type { GameState, SellStation } from '../src/game/state';
 import { aCustomer, aStation, blankState } from './helpers';
 
@@ -117,6 +120,49 @@ describe('customer routing', () => {
     for (const out of outbound.filter(onRoad))
       for (const inn of inbound.filter(onRoad))
         expect(Math.abs(out.pos.z - inn.pos.z)).toBeGreaterThan(0.15);
+  });
+});
+
+describe('shoppers and the camp building', () => {
+  /** The road's paved half-width; a lane outside this is walking on the snow. */
+  const ROAD_Z = 7;
+
+  it('keeps both of the east end\'s lanes in the gap between the fort and the road edge', () => {
+    const east = ROAD_ENDS.find((e) => e.x > 0)!;
+    // The jitter a shopper's id can produce is ±0.5 (see `laneJitter`); check both extremes of
+    // both lanes rather than the nominal lane centres.
+    for (const outbound of [false, true]) {
+      for (const jitter of [-0.5, 0.5]) {
+        const z = roadLaneZ(east, outbound, jitter);
+        expect(z).toBeLessThan(CAMP_FOOTPRINT.z0); // south of the building at every tier
+        expect(z).toBeGreaterThan(-ROAD_Z);        // and still on the road
+      }
+    }
+  });
+
+  it('never walks a shopper through the camp building', () => {
+    const state = createInitialState();
+    for (const st of state.stations) st.stock = 500;
+    // Long enough for the far end of the road to deliver its shoppers to the counter and send
+    // them home again: the walk in alone is ~13 s.
+    let inside = 0;
+    ticks(state, 120, () => {
+      for (const c of state.customers) if (inRect(c.pos, CAMP_FOOTPRINT)) inside++;
+    });
+    expect(state.customers.length).toBeGreaterThan(0); // the sim actually ran
+    expect(inside).toBe(0);
+  });
+
+  it('still sends the gold bench its shoppers from the east end', () => {
+    const state = createInitialState();
+    const gold = state.stations.find((s) => s.resource === 'gold')!;
+    expect(nearestRoadEnd(gold.pos).x).toBeGreaterThan(0);
+    for (const st of state.stations) if (st !== gold) expect(nearestRoadEnd(st.pos).x).toBeLessThan(0);
+
+    gold.stock = 30;
+    ticks(state, 60);
+    expect(gold.stock).toBeLessThan(30); // they arrive and buy
+    expect(gold.matCash).toBeGreaterThan(0);
   });
 });
 

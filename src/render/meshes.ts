@@ -211,6 +211,53 @@ export function drawIcon(
 }
 
 /**
+ * The sidebar's mute toggle (Amendment 4D), in both states: a speaker cone with either two sound
+ * arcs or a hard cross through it. Drawn here for the same reason every other icon is — an emoji
+ * speaker is a grey blob on half the platforms the game runs on — and painted onto a canvas the
+ * UI keeps and repaints, so toggling costs no allocation.
+ */
+export function drawSpeaker(
+  ctx: CanvasRenderingContext2D, muted: boolean, x: number, y: number, size: number,
+): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  const line = Math.max(2, size * 0.08);
+  const body = size * 0.22, cone = size * 0.3;
+  ctx.fillStyle = muted ? '#8d9299' : '#33383d';
+  ctx.strokeStyle = muted ? '#8d9299' : '#33383d';
+  // Cone: a small box at the ear end flaring out to a tall trapezoid.
+  ctx.beginPath();
+  ctx.moveTo(-cone, -body * 0.5);
+  ctx.lineTo(-cone * 0.35, -body * 0.5);
+  ctx.lineTo(0, -cone * 1.15);
+  ctx.lineTo(0, cone * 1.15);
+  ctx.lineTo(-cone * 0.35, body * 0.5);
+  ctx.lineTo(-cone, body * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  if (muted) {
+    // A cross beside the cone, in the space the sound arcs would occupy.
+    ctx.strokeStyle = '#c0392b';
+    ctx.lineWidth = line * 1.15;
+    const c = size * 0.16, cx = size * 0.26;
+    ctx.beginPath();
+    ctx.moveTo(cx - c, -c); ctx.lineTo(cx + c, c);
+    ctx.moveTo(cx + c, -c); ctx.lineTo(cx - c, c);
+    ctx.stroke();
+  } else {
+    ctx.lineWidth = line;
+    for (const r of [size * 0.2, size * 0.34]) {
+      ctx.beginPath();
+      ctx.arc(size * 0.06, 0, r, -0.9, 0.9);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/**
  * Label canvases are expensive and repeat constantly (every "+6" float redraws the same art),
  * so textures are cached by key. Evicting the oldest entry disposes it: a still-live sprite
  * holding an evicted texture simply re-uploads from its canvas on the next frame.
@@ -1073,7 +1120,11 @@ function campFort(g: THREE.Group): void {
   g.add(at(box(1.0, 0.9, 1.0, CAMP_WOOD), 3.0, 0.8, 2.6));
 }
 
-/** Tier 4 — Grand Fort: log-cabin courses, banner and a cash vault in the yard. */
+/**
+ * Tier 4 — Grand Fort: log-cabin courses, banner and a cash vault in the yard. Its outermost
+ * courses sit at ±4.3, the widest of the five tiers; `CAMP_FOOTPRINT` in `map.ts` mirrors that
+ * rect so the shoppers' road lanes can be routed around the building.
+ */
 function campGrandFort(g: THREE.Group): void {
   g.add(at(box(9, 0.4, 9, CAMP_LOG), 0, 0.2, 0));
   for (let course = 0; course < 7; course++) {

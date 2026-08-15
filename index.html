@@ -13,6 +13,12 @@
   .res canvas { display: block; }
   .res.flash-up { background: #c8f7c5; transition: none; }
   .res.flash-down { background: #f7c5c5; transition: none; }
+  /* Sidebar mute toggle: same card as a resource row, sized to its icon alone. */
+  .iconbtn { background: rgba(255,255,255,.85); border: 0; border-radius: 10px; padding: 4px 12px;
+             align-self: flex-start; display: flex; align-items: center; cursor: pointer;
+             box-shadow: 0 2px 6px rgba(0,0,0,.15); }
+  .iconbtn canvas { display: block; }
+  .iconbtn:hover { background: rgba(255,255,255,.98); }
   .overlay { position: fixed; inset: 0; background: rgba(20,40,60,.55); display: flex; align-items: center;
              justify-content: center; z-index: 20; }
   .panel { background: #fff; border-radius: 16px; padding: 28px 36px; text-align: center; min-width: 280px; }

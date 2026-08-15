@@ -3,21 +3,37 @@ import { TOOLS } from '../content/balance';
 import { WORLD_BOUNDS, ZONE_RECTS } from '../content/map';
 import { cartPos, railActive } from '../game/systems/carts';
 import { padAvailable } from '../game/systems/pads';
-import type { Rect } from '../game/math';
+import type { Rect, Vec2 } from '../game/math';
 import type { GameEvent, GameState, GateZone } from '../game/state';
 import type {
-  BearRefs, CartRefs, PadRefs, PlayerRefs, SawmillRefs, TreeRefs, VillagerRefs,
+  BearRefs, CartRefs, PadRefs, PersonRefs, SawmillRefs, TreeRefs, VillagerRefs,
 } from './meshes';
 import {
-  CAMP_TIERS, COLORS, ICONS, SHARED, makeBear, makeBench, makeCampTier, makeCarryBox, makeCart,
-  makeDropMesh, makeGateWall, makeLabel, makeMatMesh, makePadMesh, makePile, makePlayer,
-  makeRailMesh, makeSawmill, makeSeam, makeTool, makeTree, makeTurret, makeVillager, refsOf,
+  BEAR_BODY_SCALE, CAMP_TIERS, COLORS, SHARED, hash01, makeBear, makeBench, makeCampTier,
+  makeCarryBox, makeCart, makeCrate, makeDropMesh, makeFenceRun, makeGateWall, makeIconTextLabel,
+  makeMatMesh, makePadLabel, makePadMesh, makePileStack, makePlayer, makeRailMesh, makeRock,
+  makeSawmill, makeSeam, makeSlab, makeBubbleLabel, makeTextLabel, makeTool, makeTree, makeTurret,
+  makeVillager, refsOf, snowflakeTexture,
 } from './meshes';
 
 const CAM_OFFSET = new THREE.Vector3(16, 20, 16);
-const PILE_BOX_H = 0.14;
+/**
+ * Where the sun sits relative to the camera target, so shadows stay crisp wherever you walk.
+ * The azimuth deliberately opposes the camera's: a sun sharing the camera's bearing drops every
+ * shadow directly behind its caster, where the caster itself hides it. Offset this way, shadows
+ * fall to screen lower-left and read as the ad's do.
+ */
+const SUN_OFFSET = new THREE.Vector3(-22, 36, 26);
+/** Half-extent of the orthographic shadow frustum — just wider than what the camera can see. */
+const SHADOW_EXTENT = 30;
+const ROAD_Z = 7;
+/** Width of `GEO.hpBar`; the drain offset has to match the authored geometry. */
+const HP_BAR_WIDTH = 1.36;
+const FENCE_FROM = -44, FENCE_TO = 44;
 
 interface FloatingText { sprite: THREE.Sprite; life: number }
+/** A stretch of road edge that must stay open: a bench, a pad, a rail crossing, the camp. */
+interface FenceGap { x: number; z: number; half: number }
 
 /**
  * Release every GPU resource under `root` that this subtree owns. Module-level shared
@@ -39,15 +55,26 @@ function disposeSubtree(root: THREE.Object3D): void {
   });
 }
 
+/** Shadow flags live on meshes, not groups, so they have to be pushed down a built subtree. */
+function setShadow(root: THREE.Object3D, cast: boolean, receive = false): THREE.Object3D {
+  root.traverse((o) => {
+    if (!(o as THREE.Mesh).isMesh) return;
+    o.castShadow = cast;
+    o.receiveShadow = receive;
+  });
+  return root;
+}
+
 export class Renderer {
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private webgl: THREE.WebGLRenderer;
+  private sun!: THREE.DirectionalLight;
   private meshes = new Map<string, THREE.Object3D>();
   private dropMeshes = new Map<string, THREE.Object3D>();
   private gates = new Map<GateZone, THREE.Object3D>();
   private floats: FloatingText[] = [];
-  private snow!: THREE.Points;
+  private snowLayers: THREE.Points[] = [];
   private target = new THREE.Vector3();
   private scratch = new THREE.Vector3();
   private t = 0;
@@ -66,49 +93,103 @@ export class Renderer {
     this.webgl = new THREE.WebGLRenderer({ antialias: true });
     this.webgl.setSize(window.innerWidth, window.innerHeight);
     this.webgl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.webgl.shadowMap.enabled = true;
+    this.webgl.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.webgl.domElement);
     this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
     window.addEventListener('resize', this.onResize);
     this.buildWorld();
   }
 
-  /** Detach from the window and release the WebGL context (page teardown / hot restart). */
+  /** Detach from the window and release every GPU resource, including the context itself. */
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
+    this.clearScene();
     this.webgl.dispose();
   }
 
   private buildWorld(): void {
-    this.scene.background = new THREE.Color(0xdfe9f0);
-    this.scene.fog = new THREE.Fog(0xdfe9f0, 60, 140);
-    this.scene.add(new THREE.HemisphereLight(0xdfefff, 0x8899aa, 0.9));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.1);
-    sun.position.set(30, 50, 20);
-    this.scene.add(sun);
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(240, 160), new THREE.MeshLambertMaterial({ color: COLORS.snow }),
-    );
-    ground.rotation.x = -Math.PI / 2;
+    this.scene.background = new THREE.Color(0xe6f1fa);
+    this.scene.fog = new THREE.Fog(0xe6f1fa, 70, 160);
+    // Cool sky bounce over warm snow-lit ground, plus a warm key that actually casts. The fill
+    // is kept well under the key so shadows stay legible instead of washing out.
+    this.scene.add(new THREE.HemisphereLight(0xdcefff, 0xc9b08e, 0.52));
+    const sun = new THREE.DirectionalLight(0xfff3e2, 1.45);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    const sc = sun.shadow.camera;
+    sc.left = -SHADOW_EXTENT; sc.right = SHADOW_EXTENT;
+    sc.top = SHADOW_EXTENT; sc.bottom = -SHADOW_EXTENT;
+    sc.near = 1; sc.far = 120;
+    sc.updateProjectionMatrix();
+    sun.shadow.bias = -0.0006;
+    sun.shadow.normalBias = 0.02;
+    this.scene.add(sun, sun.target);
+    this.sun = sun;
+
+    const ground = setShadow(makeSlab(240, 0.1, 160, COLORS.snow), false, true);
+    ground.position.y = -0.05;
     this.scene.add(ground);
-    const road = new THREE.Mesh(
-      new THREE.PlaneGeometry(120, 14), new THREE.MeshLambertMaterial({ color: COLORS.road }),
-    );
-    road.rotation.x = -Math.PI / 2;
+    const road = setShadow(makeSlab(140, 0.06, ROAD_Z * 2, COLORS.road), false, true);
     road.position.y = 0.01;
     this.scene.add(road);
-    const snowGeo = new THREE.BufferGeometry();
-    const pos = new Float32Array(600 * 3);
-    for (let i = 0; i < 600; i++) {
-      pos[i * 3] = -60 + Math.random() * 120;
-      pos[i * 3 + 1] = Math.random() * 25;
-      pos[i * 3 + 2] = -40 + Math.random() * 80;
+    for (const sz of [-1, 1]) {
+      const edge = makeSlab(140, 0.05, 0.9, COLORS.roadEdge);
+      edge.position.set(0, 0.025, sz * (ROAD_Z - 0.45));
+      this.scene.add(edge);
     }
-    snowGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    this.snow = new THREE.Points(
-      snowGeo,
-      new THREE.PointsMaterial({ color: 0xffffff, size: 0.25, transparent: true, opacity: 0.8 }),
-    );
-    this.scene.add(this.snow);
+    // Carved trenches the frozen villagers stand in, as in the ad's snowfield.
+    for (let row = 0; row < 5; row++) {
+      const trench = makeSlab(40, 0.04, 2.8, COLORS.trench);
+      trench.position.set(-26, 0.02, 12 + row * 5);
+      this.scene.add(trench);
+    }
+    this.buildProps();
+    this.buildSnow();
+  }
+
+  /** Boulders and crates dressing the roadside; deterministic so screenshots stay comparable. */
+  private buildProps(): void {
+    const rocks: [number, number, number][] = [
+      [-30, -10.5, 1.0], [-14, 9.6, 0.8], [12, -10.2, 1.15], [27, 10.4, 0.9],
+      [-42, -9.8, 0.95], [40, -10.8, 1.05], [-6, -11.2, 0.7], [4, 10.8, 0.85],
+    ];
+    for (const [x, z, s] of rocks) {
+      const rock = makeRock();
+      rock.position.set(x, 0, z);
+      rock.scale.setScalar(s);
+      rock.rotation.y = hash01(`rock${x}${z}`) * Math.PI * 2;
+      this.scene.add(rock);
+    }
+    const crates: [number, number][] = [
+      [13.5, -8.6], [14.6, -9.4], [22.5, 8.8], [23.6, 9.5], [-11, -9.2], [9.5, 9.4],
+    ];
+    for (const [x, z] of crates) {
+      const crate = setShadow(makeCrate(), true);
+      crate.position.set(x, 0, z);
+      crate.rotation.y = hash01(`crate${x}${z}`) * 0.9;
+      this.scene.add(crate);
+    }
+  }
+
+  /** Three layers of round soft flakes; one Points per size keeps it to three draw calls. */
+  private buildSnow(): void {
+    this.snowLayers = [];
+    for (const [count, size] of [[260, 0.26], [200, 0.38], [140, 0.55]] as const) {
+      const geo = new THREE.BufferGeometry();
+      const pos = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        pos[i * 3] = -60 + Math.random() * 120;
+        pos[i * 3 + 1] = Math.random() * 26;
+        pos[i * 3 + 2] = -40 + Math.random() * 80;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const points = new THREE.Points(geo, new THREE.PointsMaterial({
+        map: snowflakeTexture(), size, transparent: true, opacity: 0.9, depthWrite: false,
+      }));
+      this.snowLayers.push(points);
+      this.scene.add(points);
+    }
   }
 
   /**
@@ -137,18 +218,70 @@ export class Renderer {
         wall.rotation.y = face.rotY;
         group.add(wall);
       }
+      setShadow(group, true);
       this.gates.set(zone, group);
       this.scene.add(group);
     }
   }
 
-  /** Build once-per-game meshes from state (stations, pads, machines, rails, gates, depot). */
+  /** X positions where a rail polyline crosses the given road edge. */
+  private static crossings(points: Vec2[], fenceZ: number): number[] {
+    const xs: number[] = [];
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1], b = points[i];
+      if (a.z === b.z || (a.z - fenceZ) * (b.z - fenceZ) > 0) continue;
+      xs.push(a.x + ((fenceZ - a.z) / (b.z - a.z)) * (b.x - a.x));
+    }
+    return xs;
+  }
+
+  /**
+   * Fences line the road but must not run through the things the player walks up to. Gaps are
+   * collected from live state (benches, mats, pads, the camp, rail crossings), merged, and the
+   * fence is emitted as runs between them.
+   */
+  private buildFences(state: GameState): void {
+    const gaps: FenceGap[] = [];
+    for (const st of state.stations) {
+      gaps.push({ x: st.pos.x, z: st.pos.z, half: 2.2 });
+      gaps.push({ x: st.matPos.x, z: st.matPos.z, half: 2.0 });
+    }
+    for (const pad of state.pads) gaps.push({ x: pad.pos.x, z: pad.pos.z, half: 2.8 });
+    gaps.push({ x: state.depotPos.x, z: state.depotPos.z, half: 7.5 });
+    for (const sz of [-1, 1]) {
+      const fenceZ = sz * ROAD_Z;
+      for (const rail of state.rails)
+        for (const x of Renderer.crossings(rail.points, fenceZ)) gaps.push({ x, z: fenceZ, half: 1.8 });
+      const blocked = gaps
+        .filter((g) => Math.abs(g.z - fenceZ) < 5.5)
+        .map((g) => [g.x - g.half, g.x + g.half] as [number, number])
+        .sort((a, b) => a[0] - b[0]);
+      const line = new THREE.Group();
+      let cursor = FENCE_FROM;
+      for (const [b0, b1] of blocked) {
+        if (b1 <= cursor) continue;
+        if (b0 >= FENCE_TO) break;
+        if (b0 > cursor) line.add(makeFenceRun(cursor, Math.min(b0, FENCE_TO), 'x', fenceZ));
+        cursor = b1;
+        if (cursor >= FENCE_TO) break;
+      }
+      if (cursor < FENCE_TO) line.add(makeFenceRun(cursor, FENCE_TO, 'x', fenceZ));
+      this.scene.add(line);
+    }
+    // The frozen-villager field gets its own boundary on the two sides that face the camp.
+    const field = new THREE.Group();
+    field.add(makeFenceRun(9, 35, 'z', -48));
+    field.add(makeFenceRun(-48, -6, 'x', 35));
+    this.scene.add(field);
+  }
+
+  /** Build once-per-game meshes from state (stations, pads, machines, rails, gates, fences). */
   buildStatic(state: GameState): void {
     for (const st of state.stations) {
-      const bench = makeBench();
+      const bench = setShadow(makeBench(), true);
       bench.position.set(st.pos.x, 0, st.pos.z);
-      const label = makeLabel(ICONS[st.resource]);
-      label.position.y = 2.4;
+      const label = makeBubbleLabel(st.resource);
+      label.position.y = 3.1;
       bench.add(label);
       this.scene.add(bench);
       const mat = makeMatMesh();
@@ -158,20 +291,20 @@ export class Renderer {
     for (const pad of state.pads) {
       const g = makePadMesh();
       g.position.set(pad.pos.x, 0, pad.pos.z);
-      const label = makeLabel(`${ICONS[pad.currency]} ${pad.cost}`);
+      const label = makePadLabel(pad.currency, pad.cost);
       label.position.y = 2.2;
       g.add(label);
       this.meshes.set(pad.id, g);
       this.scene.add(g);
     }
     for (const turret of state.turrets) {
-      const g = makeTurret();
+      const g = setShadow(makeTurret(), true);
       g.position.set(turret.pos.x, 0, turret.pos.z);
       this.meshes.set(turret.id, g);
       this.scene.add(g);
     }
     for (const mill of state.sawmills) {
-      const g = makeSawmill();
+      const g = setShadow(makeSawmill(), true);
       g.position.set(mill.pos.x, 0, mill.pos.z);
       this.meshes.set(mill.id, g);
       this.scene.add(g);
@@ -182,10 +315,11 @@ export class Renderer {
       this.scene.add(g);
     }
     this.buildGates();
+    this.buildFences(state);
   }
 
-  /** Full teardown + rebuild (used by Restart). */
-  rebuild(state: GameState): void {
+  /** Drop every scene object and the GPU resources it owns. */
+  private clearScene(): void {
     for (const f of this.floats) this.dropFloat(f);
     this.floats = [];
     while (this.scene.children.length > 0) {
@@ -196,6 +330,12 @@ export class Renderer {
     this.meshes.clear();
     this.dropMeshes.clear();
     this.gates.clear();
+    this.snowLayers = [];
+  }
+
+  /** Full teardown + rebuild (used by Restart). */
+  rebuild(state: GameState): void {
+    this.clearScene();
     this.lastToolKey = '';
     this.lastCarryKey = '';
     this.lastCampTier = -1;
@@ -217,10 +357,14 @@ export class Renderer {
     this.t += dt;
     this.syncPlayer(state);
     for (const tree of state.trees) {
-      // Trees never move: place once, then freeze the matrix and only toggle visibility.
+      // Trees never move: place once with its deterministic size/spin, then freeze the matrix
+      // and only toggle visibility.
       const m = this.ensure(tree.id, () => {
         const g = makeTree();
         g.position.set(tree.pos.x, 0, tree.pos.z);
+        g.rotation.y = hash01(`${tree.id}rot`) * Math.PI * 2;
+        g.scale.setScalar(0.85 + hash01(`${tree.id}size`) * 0.4);
+        setShadow(g, true);
         g.updateMatrix();
         g.matrixAutoUpdate = false;
         return g;
@@ -231,13 +375,13 @@ export class Renderer {
       refs.stump.visible = tree.respawn > 0;
     }
     for (const seam of state.seams) {
-      const m = this.ensure(seam.id, makeSeam);
+      const m = this.ensure(seam.id, () => setShadow(makeSeam(), true));
       m.position.set(seam.pos.x, 0, seam.pos.z);
       m.visible = state.zonesOpen[seam.zone];
       m.scale.y = seam.respawn > 0 ? 0.35 : 1;
     }
     for (const bear of state.bears) {
-      const m = this.ensure(bear.id, makeBear);
+      const m = this.ensure(bear.id, () => setShadow(makeBear(), true));
       m.position.set(bear.pos.x, 0, bear.pos.z);
       m.visible = state.zonesOpen[bear.zone] && bear.state !== 'dead';
       if (bear.state === 'aggro') {
@@ -245,19 +389,30 @@ export class Renderer {
         m.position.y = Math.abs(Math.sin(this.t * 10)) * 0.15;
       }
       const refs = refsOf<BearRefs>(m);
+      // Sleeping bears breathe. Purely cosmetic: the pulse never touches game state.
+      const breath = bear.state === 'sleep'
+        ? 1 + Math.sin(this.t * 1.7 + hash01(bear.id) * Math.PI * 2) * 0.035
+        : 1;
+      refs.body.scale.set(
+        BEAR_BODY_SCALE.x * breath, BEAR_BODY_SCALE.y * breath, BEAR_BODY_SCALE.z,
+      );
       // Keep the bars square to the camera no matter which way the bear turned.
       refs.bars.rotation.y = Math.PI / 4 - m.rotation.y;
       const hurt = bear.hp < bear.maxHp && bear.state !== 'dead';
       refs.hpBg.visible = hurt;
       refs.hp.visible = hurt;
-      refs.hp.scale.x = Math.max(bear.hp / bear.maxHp, 0.001);
+      // Scaling a centred box shrinks it from both ends; slide it left by half the loss so the
+      // bar drains from the right like a health bar should.
+      const frac = Math.max(bear.hp / bear.maxHp, 0.001);
+      refs.hp.scale.x = frac;
+      refs.hp.position.x = -(1 - frac) * HP_BAR_WIDTH / 2;
     }
     const liveDrops = new Set<string>();
     for (const drop of state.drops) {
       liveDrops.add(drop.id);
       let m = this.dropMeshes.get(drop.id);
       if (!m) {
-        m = makeDropMesh(drop.kind);
+        m = setShadow(makeDropMesh(drop.kind), true);
         this.dropMeshes.set(drop.id, m);
         this.scene.add(m);
       }
@@ -277,14 +432,14 @@ export class Renderer {
       refsOf<PadRefs>(m).progress.scale.set(f, 1, f);
     }
     for (const st of state.stations) {
-      this.syncPile(`cash-${st.id}`, st.matPos.x, st.matPos.z, st.matCash, COLORS.cash, 10, 12);
+      this.syncPile(`cash-${st.id}`, st.matPos.x, st.matPos.z, st.matCash, COLORS.cash, 10, 24, 0.07);
     }
     for (const turret of state.turrets) {
       const m = this.meshes.get(turret.id);
       if (!m) continue;
       m.visible = turret.active;
       this.syncPile(
-        `out-${turret.id}`, turret.pos.x + 1.2, turret.pos.z + 1.2, turret.output, COLORS.meat, 3, 14,
+        `out-${turret.id}`, turret.pos.x + 1.4, turret.pos.z + 1.4, turret.output, COLORS.meat, 3, 18,
       );
     }
     for (const mill of state.sawmills) {
@@ -293,7 +448,7 @@ export class Renderer {
       m.visible = mill.active;
       if (mill.active) refsOf<SawmillRefs>(m).blade.rotation.x += dt * 6;
       this.syncPile(
-        `out-${mill.id}`, mill.pos.x + 1.4, mill.pos.z + 1.2, mill.output, COLORS.wood, 3, 14,
+        `out-${mill.id}`, mill.pos.x + 1.6, mill.pos.z + 1.4, mill.output, COLORS.wood, 3, 18,
       );
     }
     for (const rail of state.rails) {
@@ -304,7 +459,7 @@ export class Renderer {
     for (const cart of state.carts) {
       const rail = state.rails.find((r) => r.id === cart.railId);
       if (!rail) continue;
-      const m = this.ensure(cart.id, makeCart);
+      const m = this.ensure(cart.id, () => setShadow(makeCart(), true));
       m.visible = railActive(state, rail);
       const pos = cartPos(state, cart);
       m.position.set(pos.x, 0, pos.z);
@@ -315,7 +470,7 @@ export class Renderer {
     this.syncCamp(state);
     for (let i = 0; i < state.villagers.length; i++) {
       const vil = state.villagers[i];
-      const m = this.ensure(vil.id, makeVillager);
+      const m = this.ensure(vil.id, () => setShadow(makeVillager(), true));
       const frozen = vil.state === 'frozen';
       // Haulers all converge on the same logic positions; nudge each one off the pile so the
       // crowd reads as individuals. Frozen rows stay on their exact grid.
@@ -325,6 +480,7 @@ export class Renderer {
       m.position.set(vil.pos.x + jx, bob, vil.pos.z + jz);
       const refs = refsOf<VillagerRefs>(m);
       refs.ice.visible = frozen;
+      refs.frost.visible = frozen;
       refs.load.visible = vil.carrying !== null;
     }
     for (const [zone, wall] of this.gates) wall.visible = !state.zonesOpen[zone];
@@ -332,11 +488,15 @@ export class Renderer {
     this.target.lerp(this.scratch.set(p.x, 0, p.z), 1 - Math.exp(-5 * dt));
     this.camera.position.copy(this.target).add(CAM_OFFSET);
     this.camera.lookAt(this.target);
+    // Walk the sun with the camera so the shadow frustum always covers what is on screen.
+    this.sun.position.copy(this.target).add(SUN_OFFSET);
+    this.sun.target.position.copy(this.target);
+    this.sun.target.updateMatrixWorld();
   }
 
   /**
    * The camp is one structure that is swapped wholesale when a camp pad completes; the depot
-   * stockpiles and label follow the tier's layout (outside the hut, inside the fort).
+   * stockpiles and nameplate follow the tier's layout (outside the hut, on shelves in the fort).
    */
   private syncCamp(state: GameState): void {
     const tier = Math.max(0, Math.min(CAMP_TIERS.length - 1, Math.round(state.campTier)));
@@ -348,9 +508,9 @@ export class Renderer {
         disposeSubtree(old);
         this.meshes.delete('camp');
       }
-      const g = makeCampTier(tier);
+      const g = setShadow(makeCampTier(tier), true, true);
       g.position.set(state.depotPos.x, 0, state.depotPos.z);
-      const label = makeLabel('📦');
+      const label = makeTextLabel(CAMP_TIERS[tier].name);
       label.position.y = CAMP_TIERS[tier].labelY;
       g.add(label);
       this.meshes.set('camp', g);
@@ -363,44 +523,44 @@ export class Renderer {
       const spot = info.piles[i];
       this.syncPile(
         `depot-${kinds[i]}`, state.depotPos.x + spot.x, state.depotPos.z + spot.z,
-        state.depot[kinds[i]], colors[i], 3, 14, info.floorY,
+        state.depot[kinds[i]], colors[i], 3, 18, info.floorY,
       );
     }
   }
 
   /**
-   * One pile renderer for station cash, machine outputs and depot stockpiles: `unitsPerBox`
-   * resources make one box and the stack is capped at `cap` boxes so a runaway stockpile can
-   * never grow without bound. `baseY` lifts a pile onto a camp platform.
+   * One pile renderer for station cash, machine outputs and depot stockpiles. Every pile is a
+   * capped grid of boxes — three wide, two deep, stacking upward — so a cash mat reads as the
+   * ad's bundled bills and a stockpile as crates. `unitsPerBox` sets how fast it grows and
+   * `cap` bounds the mesh count; `baseY` lifts a pile onto a camp platform or shelf.
    */
   private syncPile(
     id: string, x: number, z: number, count: number, color: number,
     unitsPerBox: number, cap: number, baseY = 0,
   ): void {
-    const m = this.ensure(id, () => makePile(color));
-    m.visible = count > 0;
-    if (count <= 0) return;
-    const boxes = Math.min(Math.ceil(count / unitsPerBox), cap);
-    const h = 0.06 + boxes * PILE_BOX_H;
-    m.scale.y = h;
-    m.position.set(x, baseY + h / 2, z);
+    const g = this.ensure(id, () => setShadow(makePileStack(color, cap), true));
+    const boxes = count > 0 ? Math.min(Math.ceil(count / unitsPerBox), cap) : 0;
+    g.visible = boxes > 0;
+    g.position.set(x, baseY, z);
+    for (let i = 0; i < g.children.length; i++) g.children[i].visible = i < boxes;
   }
 
   private syncPlayer(state: GameState): void {
     const p = state.player;
-    const m = this.ensure('player', makePlayer) as THREE.Group;
+    const m = this.ensure('player', () => setShadow(makePlayer(), true)) as THREE.Group;
     m.position.set(p.pos.x, 0, p.pos.z);
-    const refs = refsOf<PlayerRefs>(m);
+    const refs = refsOf<PersonRefs>(m);
     const toolKey = `${p.tool}|${p.hasPickaxe}`;
     if (toolKey !== this.lastToolKey) {
       this.lastToolKey = toolKey;
       for (const child of [...refs.toolMount.children]) disposeSubtree(child);
       refs.toolMount.clear();
-      refs.toolMount.add(makeTool(p.tool));
+      refs.toolMount.add(setShadow(makeTool(p.tool), true));
       if (p.hasPickaxe) {
-        const pick = makeTool('pickaxe');
-        pick.position.set(-0.9, 0, -0.5);
-        pick.rotation.z = 0.5;
+        // Slung across the back-left, clear of both the swinging tool and the carry stack.
+        const pick = setShadow(makeTool('pickaxe'), true);
+        pick.position.set(-0.62, -0.2, -0.38);
+        pick.rotation.set(0, 0, 0.62);
         refs.toolMount.add(pick);
       }
     }
@@ -420,8 +580,9 @@ export class Renderer {
       const add = (count: number, color: number) => {
         for (let i = 0; i < Math.ceil(count / 2); i++) {
           const box = makeCarryBox(color);
+          box.castShadow = true;
           box.position.y = y;
-          y += 0.22;
+          y += 0.19;
           refs.carry.add(box);
         }
       };
@@ -433,13 +594,11 @@ export class Renderer {
 
   applyEvents(events: GameEvent[]): void {
     for (const e of events) {
-      let text: string | null = null;
-      if (e.type === 'sell') text = `+💵${e.cash}`;
-      else if (e.type === 'unlock') text = 'Unlocked!';
-      else if (e.type === 'thaw') text = '+1 rescued';
-      if (text && 'pos' in e) {
-        const sprite = makeLabel(text);
-        sprite.scale.set(2.6, 1.3, 1);
+      let sprite: THREE.Sprite | null = null;
+      if (e.type === 'sell') sprite = makeIconTextLabel('cash', `+${e.cash}`);
+      else if (e.type === 'unlock') sprite = makeTextLabel('Unlocked!');
+      else if (e.type === 'thaw') sprite = makeTextLabel('+1 rescued');
+      if (sprite && 'pos' in e) {
         // Concurrent floats from the same bench would overlap into an unreadable smear;
         // fan them out deterministically instead.
         const lane = ((this.floatSeq++ % 3) - 1) * 0.7;
@@ -471,13 +630,16 @@ export class Renderer {
         this.floats.splice(i, 1);
       }
     }
-    const pos = this.snow.geometry.getAttribute('position') as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) {
-      let y = pos.getY(i) - dt * 2;
-      if (y < 0) y = 25;
-      pos.setY(i, y);
+    for (let layer = 0; layer < this.snowLayers.length; layer++) {
+      const pos = this.snowLayers[layer].geometry.getAttribute('position') as THREE.BufferAttribute;
+      const fall = dt * (1.4 + layer * 0.7);
+      for (let i = 0; i < pos.count; i++) {
+        let y = pos.getY(i) - fall;
+        if (y < 0) y = 26;
+        pos.setY(i, y);
+      }
+      pos.needsUpdate = true;
     }
-    pos.needsUpdate = true;
     this.webgl.render(this.scene, this.camera);
   }
 }

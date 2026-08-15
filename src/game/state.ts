@@ -108,8 +108,7 @@ export type GameEvent =
   | { type: 'sell'; pos: Vec2; cash: number }
   | { type: 'unlock'; pos: Vec2 }
   | { type: 'bearHit'; pos: Vec2 }
-  | { type: 'playerHit'; pos: Vec2 }
-  | { type: 'win' };
+  | { type: 'playerHit'; pos: Vec2 };
 
 export interface GameState {
   time: number;
@@ -135,7 +134,10 @@ export interface GameState {
   /** Whether the fort's hand-off crew has been hired; derived from the distributor pad on load. */
   distributorActive: boolean;
   zonesOpen: Record<ZoneId, boolean>;
-  won: boolean;
+  /**
+   * Lifetime totals. Since Amendment 5A there is no ending for these to be the epitaph of — the
+   * game is an infinite sandbox — so they are simply a running record, shown in the pause menu.
+   */
   stats: { chops: number; bearsKilled: number; earned: number };
   events: GameEvent[];
   nextDropId: number;

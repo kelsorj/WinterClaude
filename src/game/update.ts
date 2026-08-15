@@ -11,9 +11,8 @@ import { padsTick } from './systems/pads';
 import { machinesTick } from './systems/machines';
 import { cartsTick } from './systems/carts';
 import { villagersTick } from './systems/villagers';
-import { winTick } from './systems/win';
 
-/** One fixed-timestep tick. Order matters: move → act → economy → automation → win. */
+/** One fixed-timestep tick. Order matters: move → act → economy → automation. */
 export function update(state: GameState, intent: Vec2, dt: number): void {
   state.time += dt;
   movePlayer(state, intent, dt);
@@ -27,5 +26,4 @@ export function update(state: GameState, intent: Vec2, dt: number): void {
   machinesTick(state, dt);
   cartsTick(state, dt);
   villagersTick(state, dt);
-  winTick(state);
 }

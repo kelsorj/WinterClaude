@@ -7,7 +7,6 @@ const KEY = 'frostfall-save-v1';
 
 interface SaveData {
   time: number;
-  won: boolean;
   player: GameState['player'];
   padsDone: string[];
   padsPaid: Record<string, number>;
@@ -39,7 +38,6 @@ function conservedDepot(state: GameState): GameState['depot'] {
 export function serialize(state: GameState): string {
   const data: SaveData = {
     time: state.time,
-    won: state.won,
     player: state.player,
     padsDone: state.pads.filter((p) => p.done).map((p) => p.id),
     padsPaid: Object.fromEntries(state.pads.filter((p) => !p.done && p.paid > 0).map((p) => [p.id, p.paid])),
@@ -76,7 +74,8 @@ export function deserialize(json: string, previous?: GameState): GameState {
   }
   const state = createInitialState();
   state.time = data.time;
-  state.won = data.won;
+  // Saves written before Amendment 5A carry a `won` flag. There is no ending any more, so the
+  // field is simply read past: a camp that "finished" under the old rules just keeps going.
   state.player = { ...state.player, ...data.player };
   state.zonesOpen = { ...state.zonesOpen, ...data.zonesOpen };
   for (const pad of state.pads) {

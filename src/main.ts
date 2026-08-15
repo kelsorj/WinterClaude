@@ -14,23 +14,22 @@ renderer.buildStatic(state);
 let paused = false;
 
 const ui = initUI({
-  onResume: () => { paused = false; ui.showPause(false); },
+  onResume: () => { paused = false; ui.showPause(false, state); },
   onRestart: () => {
     clearSave();
     state = createInitialState();
     renderer.rebuild(state);
-    ui.reset();
     paused = false;
-    ui.showPause(false);
+    ui.showPause(false, state);
   },
   onToggleMute: () => toggleMute(),
-}, isMuted(), state.won);
+}, isMuted());
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return; // holding M must not strobe the mute flag
   if (e.key === 'Escape') {
     paused = !paused;
-    ui.showPause(paused);
+    ui.showPause(paused, state);
   }
   if (e.key.toLowerCase() === 'm') ui.setMuted(toggleMute());
 });

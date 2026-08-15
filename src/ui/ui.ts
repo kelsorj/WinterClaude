@@ -8,15 +8,18 @@ export interface UICallbacks {
 }
 
 export interface UIHandles {
-  showPause(show: boolean): void;
+  /**
+   * Show or hide the pause overlay. `state` is read only on the way in, to refresh the lifetime
+   * stats: the overlay is the one place they are shown now that there is no win screen
+   * (Amendment 5A), and a paused game's numbers never move, so once per open is enough.
+   */
+  showPause(show: boolean, state: GameState): void;
   /**
    * The one place the muted flag is rendered. The M key, the pause-menu button and the sidebar
    * speaker all toggle audio and then land here, so no two of them can ever disagree about what
    * the game is doing (Amendment 4D).
    */
   setMuted(muted: boolean): void;
-  /** Drop win-screen state so a fresh camp can win again. */
-  reset(): void;
   update(state: GameState): void;
 }
 
@@ -46,7 +49,15 @@ function iconCanvas(kind: IconKind): HTMLCanvasElement {
   return canvas;
 }
 
-export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = false): UIHandles {
+/** The lifetime record, as one line: what the win screen used to show, now shown on demand. */
+export function statsLine(state: GameState): string {
+  const mins = Math.floor(state.time / 60);
+  const secs = Math.floor(state.time % 60);
+  return `Time ${mins}m ${secs}s · ${state.stats.chops} trees felled · `
+    + `${state.stats.bearsKilled} bears defeated · $${Math.floor(state.stats.earned)} earned`;
+}
+
+export function initUI(cb: UICallbacks, initialMuted: boolean): UIHandles {
   const hud = document.createElement('div');
   hud.id = 'hud';
   type Row = { el: HTMLElement; value: HTMLElement; prev: number; timer?: ReturnType<typeof setTimeout> };
@@ -78,6 +89,10 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
 
   const pause = overlay();
   const pausePanel = panel('Paused');
+  // The lifetime record used to be the reward for finishing; with no ending to hand it over at
+  // (Amendment 5A) it lives here, where a player can look it up whenever they care to.
+  const stats = document.createElement('p');
+  pausePanel.appendChild(stats);
   pausePanel.appendChild(button('Resume', () => cb.onResume()));
   const muteBtn = button('Mute (M)', () => setMuted(cb.onToggleMute()));
   muteBtn.classList.add('secondary');
@@ -89,16 +104,6 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
   pausePanel.appendChild(restartBtn);
   pause.appendChild(pausePanel);
   document.body.appendChild(pause);
-
-  const win = overlay();
-  const winPanel = panel('Camp Complete!');
-  const stats = document.createElement('p');
-  winPanel.appendChild(stats);
-  winPanel.appendChild(button('Keep playing', () => win.classList.add('hidden')));
-  win.appendChild(winPanel);
-  document.body.appendChild(win);
-  // A save that was already won must not re-announce the win on every reload.
-  let winShown = initialWon;
 
   /**
    * The single place the muted flag becomes pixels. Every route that toggles audio — the M key
@@ -131,27 +136,17 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
         row.prev = val;
       }
     }
-    if (state.won && !winShown) {
-      winShown = true;
-      const mins = Math.floor(state.time / 60);
-      const secs = Math.floor(state.time % 60);
-      stats.textContent =
-        `Time ${mins}m ${secs}s · ${state.stats.chops} trees felled · ` +
-        `${state.stats.bearsKilled} bears defeated · $${Math.floor(state.stats.earned)} earned`;
-      win.classList.remove('hidden');
-    }
   }
 
   // Both controls start from the same call, rather than each seeding its own initial look.
   setMuted(initialMuted);
 
   return {
-    showPause: (show: boolean) => pause.classList.toggle('hidden', !show),
-    setMuted,
-    reset: () => {
-      winShown = false;
-      win.classList.add('hidden');
+    showPause: (show: boolean, state: GameState) => {
+      if (show) stats.textContent = statsLine(state);
+      pause.classList.toggle('hidden', !show);
     },
+    setMuted,
     update,
   };
 }

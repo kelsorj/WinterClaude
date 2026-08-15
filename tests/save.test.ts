@@ -19,7 +19,6 @@ describe('save round-trip', () => {
     state.turrets[0].output = 5;
     state.stats = { chops: 10, bearsKilled: 3, earned: 200 };
     state.time = 321;
-    state.won = false;
 
     const restored = deserialize(serialize(state));
 
@@ -50,10 +49,20 @@ describe('save round-trip', () => {
     expect(deserialize(serialize(createInitialState())).campTier).toBe(0);
   });
 
-  it('preserves the won flag', () => {
+  it('loads a pre-5A save that had already been won, ignoring the flag', () => {
     const state = createInitialState();
-    state.won = true;
-    expect(deserialize(serialize(state)).won).toBe(true);
+    state.depot.gold = 3;
+    const legacy = JSON.parse(serialize(state)) as Record<string, unknown>;
+    legacy.won = true; // what a finished camp carried before the ending was removed
+
+    const restored = deserialize(JSON.stringify(legacy));
+
+    expect('won' in restored).toBe(false);
+    expect(restored.depot.gold).toBe(3); // and the rest of the save comes through untouched
+  });
+
+  it('writes no won flag of its own', () => {
+    expect(serialize(createInitialState())).not.toContain('won');
   });
 
   it('preserves partial pad payments and uncollected mat cash', () => {

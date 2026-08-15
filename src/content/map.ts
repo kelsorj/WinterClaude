@@ -180,8 +180,14 @@ export function stationDefs(): SellStation[] {
 
 /**
  * The two open ends of the camp road: shoppers walk on from the nearer one and leave the same
- * way. They sit just inside the world bounds so arrivals appear from off-camera, and on opposite
- * sides of the road's centre line so the map's two ends do not feed one shared file of walkers.
+ * way. They sit on opposite sides of the road's centre line so the map's two ends do not feed
+ * one shared file of walkers.
+ *
+ * These stayed at ±58 when the road grew to span the whole 10× world, rather than moving out to
+ * the new bounds. ±58 is already far enough off-camera at this camera height that arrivals
+ * appear out of nothing, and it is what the shop economy is tuned around: the ~12 s walk down
+ * the road is what sets how many shoppers are on the map at once (see CUSTOMER_QUEUE_CAP).
+ * Pushing them to ±188 would triple that walk and, with it, the on-screen crowd.
  */
 export const ROAD_ENDS: Vec2[] = [v(-58, 2), v(58, -2)];
 

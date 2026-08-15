@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { intentFrom, type InputState } from '../src/game/input';
 import { movePlayer } from '../src/game/systems/movement';
-import { WORLD_BOUNDS } from '../src/content/map';
-import { v } from '../src/game/math';
+import { WORLD_BOUNDS, ZONE_RECTS } from '../src/content/map';
+import { inRect, v } from '../src/game/math';
 import { blankState } from './helpers';
 
 const input = (over: Partial<InputState> = {}): InputState =>
@@ -80,5 +80,25 @@ describe('movePlayer', () => {
     state.player.pos = v(60, 0);
     for (let i = 0; i < 600; i++) movePlayer(state, v(0, -1), 1 / 60); // press toward deepforest for 10s
     expect(state.player.pos.z).toBeGreaterThanOrEqual(-6); // held at the zone edge
+  });
+
+  it('lets the player walk right around a sealed zone without ever entering it', () => {
+    const state = blankState();
+    const deep = ZONE_RECTS.deepforest;
+    state.player.pos = v(deep.x1 + 4, deep.z1 + 4); // open wilderness off its south-east corner
+    // Anticlockwise around the rect: north up its east side, west across its top, then back
+    // south down its far side — ground that only exists because the world grew around it.
+    const legs: [number, number, number][] = [[0, -1, 8], [-1, 0, 8], [0, 1, 8], [1, 0, 8]];
+    let entered = false;
+    for (const [ix, iz, seconds] of legs) {
+      for (let i = 0; i < seconds * 60; i++) {
+        movePlayer(state, v(ix, iz), 1 / 60);
+        if (inRect(state.player.pos, deep)) entered = true;
+      }
+    }
+    expect(entered).toBe(false);
+    // …and the lap really did go around it, rather than being stopped short somewhere.
+    expect(state.player.pos.x).toBeGreaterThan(deep.x1);
+    expect(state.player.pos.z).toBeGreaterThan(deep.z1);
   });
 });

@@ -262,6 +262,11 @@ export class Renderer {
    * Collision blocks a sealed zone on every side, so wall off every face of the rect that
    * touches reachable ground. Faces flush with the world bounds are skipped — nothing can
    * stand beyond them.
+   *
+   * Since the 10× world nothing is flush any more: the gated rects used to back onto the edge
+   * of the map and now sit in open wilderness, so all four faces are built and each zone reads
+   * as a walled compound you can walk right around. That is exactly what the collision has
+   * always done — the walls simply tell the truth about it now.
    */
   private buildGates(): void {
     const entries = Object.entries(ZONE_RECTS) as [GateZone, Rect][];

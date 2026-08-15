@@ -356,3 +356,51 @@ A repeatable **Expedition pad** near the fort keeps the world growing forever:
 
 This makes pads a mix of one-shot unlocks (the existing 18) and the
 repeatable expedition, and gives late-game cash an unbounded purpose.
+
+---
+
+## Amendment 6 — The fort compound, bear sieges, and high-detail sprites (2026-08-15, user-directed)
+
+Reference: the late-game ad frame — fort centered in a fenced compound with the
+three stands at its feet, queues outside, rails looping the fort, turret towers
+on the fence line firing at bears.
+
+### A. Camp compound layout rework
+The camp becomes a compound **centered on the fort**: the three sell stands
+(wood / meat / gold) arrange around the fort's plaza (an arc at its south and
+flanks), each with its mat, bill piles, and customer queue extending outward
+away from the compound. The fence ring encloses fort + stands with gate gaps
+for the road, shopper lanes, and rails; the rail loop rings the fort as today.
+A brown plaza disc under the compound (ad-style) replaces the straight road
+band locally; the road still crosses the world and feeds the shopper lanes.
+All existing invariants hold (pad spacing, footprint clearance, corridor
+widths, queue anchors) — re-derive them from the new layout rather than
+patching numbers.
+
+### B. Bear sieges and camp defense
+Bears want the meat:
+- Wilderness bears near the camp (and a slow ambient trickle from the forest)
+  become **raiders**: they path to the camp, enter through the gate gaps, and
+  head for the meat (depot first, then the meat stand's stock). A feeding bear
+  drains meat ~1/s until it has eaten ~5, then lumbers away sated. Killing a
+  raider drops its stolen meat plus the usual yield.
+- **Arrow stations**: defense turrets on the compound perimeter, bought as
+  pads (2 initial defense pads unlocked after the Stockade, 2 more after the
+  Fort; distinct from the far hunting turrets). They auto-fire continuously at
+  any bear in range, exactly like existing turrets, but their kills drop meat
+  on the spot (no output pile/cart).
+- Raids are ambient and continuous, scaling gently with expansions (more
+  wilderness = more raiders); no wave UI, no lose state — the worst outcome
+  is eaten meat.
+
+### C. High-detail sprites (from the reference frame)
+- **Money**: bill stacks get a canvas texture — green bills with a lighter
+  band and a **$** marking, subtle row pattern, like the ad's cash bricks.
+- **Meat**: stock piles and carried meat read as **mini steaks** — flat
+  rounded slabs, pink-red with a lighter marbling stripe, stacked in columns.
+- **Gold mine**: the quarry gains a mine structure — timber headframe over
+  the main seam cluster with a short rail stub and a **mine cart** that fills
+  with gold as miners work; miners visually load the cart, and their carried
+  gold reads as small ingot stacks.
+- General detail pass on the compound props (crates, lantern posts, banner)
+  to match the reference's density.

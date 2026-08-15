@@ -22,7 +22,7 @@ export const SHARED: ReadonlySet<THREE.BufferGeometry | THREE.Material | THREE.T
 export const COLORS = {
   trunk: 0x8a5738, trunkDark: 0x6d4327,
   foliage: 0x5fb0e6, foliage2: 0x7cc4f0, foliage3: 0x9bd6f7, snowCap: 0xffffff,
-  snow: 0xfbfdff, snowShade: 0xdceaf7, trench: 0xdfeaf8,
+  snow: 0xfbfdff, trench: 0xdfeaf8,
   road: 0xd89a66, roadEdge: 0xeab98a,
   bear: 0xfcfbf7, bearSnout: 0xb9bcc2,
   skin: 0xf1c9a2, beard: 0xf8f8f5, fur: 0xf3e7d2,
@@ -35,9 +35,6 @@ export const COLORS = {
   fence: 0xf6efe3, fenceShade: 0xdccfba,
   rock: 0x9aa2a9, crate: 0xb07a45, crateDark: 0x8a5c31,
 } as const;
-
-/** Kept for the HUD (Round G); world labels draw their icons with `drawIcon` instead. */
-export const ICONS: Record<Currency, string> = { cash: '💵', wood: '🪵', meat: '🥩', gold: '🪙' };
 
 /** Lambert materials are keyed by colour+opacity so every mesh of a kind shares one. */
 const materials = new Map<string, THREE.MeshLambertMaterial>();
@@ -136,14 +133,17 @@ function freezeChildren(root: THREE.Object3D): void {
 // Canvas iconography
 // ---------------------------------------------------------------------------
 
+/** The four commodities plus the rescued-villager marker used by the HUD's last row. */
+export type IconKind = Currency | 'villager';
+
 /**
- * Draws a commodity icon centred on (x, y) inside a `size`-wide box. Emoji render
+ * Draws an icon centred on (x, y) inside a `size`-wide box. Emoji render
  * inconsistently across platforms and read as tiny grey blobs at world scale, so every world
  * label paints its icon here instead. Gold in particular has to be unmistakable: a bar with a
  * lit top face and a shine streak, never a coin that could be mistaken for cash.
  */
 export function drawIcon(
-  ctx: CanvasRenderingContext2D, kind: Currency, x: number, y: number, size: number,
+  ctx: CanvasRenderingContext2D, kind: IconKind, x: number, y: number, size: number,
 ): void {
   ctx.save();
   ctx.translate(x, y);
@@ -203,6 +203,20 @@ export function drawIcon(
     ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = line * 1.2;
     ctx.beginPath();
     ctx.moveTo(tl + w * 0.06, -h * 0.66); ctx.lineTo(tl + w * 0.3, -h * 0.66); ctx.stroke();
+  } else if (kind === 'villager') {
+    // Rescued villager: head-and-shoulders silhouette in the villagers' teal parka.
+    const head = size * 0.21, sh = size * 0.34;
+    ctx.fillStyle = '#2fb3c9';
+    ctx.beginPath();
+    ctx.arc(0, size * 0.42, sh, Math.PI, 0);
+    ctx.lineTo(sh, size * 0.5);
+    ctx.lineTo(-sh, size * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#208d9e'; ctx.lineWidth = line;
+    ctx.stroke();
+    ctx.fillStyle = '#2fb3c9';
+    ctx.beginPath(); ctx.arc(0, -size * 0.14, head, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   } else {
     // Cash: green bill with a paler field and a bold $.
     const w = size * 0.94, h = size * 0.58;
@@ -261,9 +275,14 @@ function sprite(tex: THREE.Texture, sx: number, sy: number): THREE.Sprite {
   return s;
 }
 
-/** Ad-style bench bubble: a white disc with a pointer tail and the commodity icon inside. */
-export function makeBubbleLabel(kind: Currency): THREE.Sprite {
-  const tex = labelTexture(`bubble|${kind}`, 256, 256, (ctx) => {
+/**
+ * Ad-style bench bubble: a white disc with a pointer tail, the commodity icon, and the cash
+ * waiting on that bench's mat. An empty mat shows the icon alone, centred and large — a bare
+ * "0" is noise. Textures are cached per (kind, count), so a bench that keeps selling churns
+ * through the label LRU rather than allocating without bound.
+ */
+export function bubbleTexture(kind: Currency, count: number): THREE.CanvasTexture {
+  return labelTexture(`bubble|${kind}|${count}`, 256, 256, (ctx) => {
     const cx = 128, cy = 108, r = 92;
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = '#cfd8e2';
@@ -275,9 +294,21 @@ export function makeBubbleLabel(kind: Currency): THREE.Sprite {
     ctx.closePath();
     ctx.fill();
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    drawIcon(ctx, kind, cx, cy, 118);
+    if (count <= 0) {
+      drawIcon(ctx, kind, cx, cy, 118);
+      return;
+    }
+    drawIcon(ctx, kind, cx, cy - 30, 92);
+    ctx.fillStyle = '#2b3440';
+    ctx.font = 'bold 56px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(count), cx, cy + 52);
   });
-  return sprite(tex, 2.9, 2.9);
+}
+
+export function makeBubbleLabel(kind: Currency, count: number): THREE.Sprite {
+  return sprite(bubbleTexture(kind, count), 2.9, 2.9);
 }
 
 /** Unlock pad: a grey rounded card carrying the drawn icon and the price. */
@@ -552,10 +583,22 @@ function makePerson(coat: number, coatDark: number, beard: boolean): THREE.Group
   return g;
 }
 
-export type PlayerRefs = PersonRefs;
+export interface PlayerRefs extends PersonRefs { coat: THREE.MeshLambertMaterial }
 
 export function makePlayer(): THREE.Group {
-  return makePerson(COLORS.playerCoat, COLORS.playerCoatDark, true);
+  const g = makePerson(COLORS.playerCoat, COLORS.playerCoatDark, true);
+  // `lam()` hands the same cached material to every mesh of a colour, so tinting it for the hit
+  // flash would turn every teal-coated villager red too. The player gets a private copy. It is
+  // deliberately NOT registered in SHARED: it belongs to this subtree and should be disposed
+  // with it.
+  const coat = lam(COLORS.playerCoat).clone();
+  const cached = lam(COLORS.playerCoat);
+  g.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh && mesh.material === cached) mesh.material = coat;
+  });
+  g.userData.refs = { ...refsOf<PersonRefs>(g), coat } satisfies PlayerRefs;
+  return g;
 }
 
 export function makeTool(kind: ToolId | 'pickaxe'): THREE.Group {

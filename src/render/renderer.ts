@@ -6,10 +6,10 @@ import { padAvailable } from '../game/systems/pads';
 import type { Rect, Vec2 } from '../game/math';
 import type { GameEvent, GameState, GateZone } from '../game/state';
 import type {
-  BearRefs, CartRefs, PadRefs, PersonRefs, SawmillRefs, TreeRefs, VillagerRefs,
+  BearRefs, CartRefs, PadRefs, PlayerRefs, SawmillRefs, TreeRefs, VillagerRefs,
 } from './meshes';
 import {
-  BEAR_BODY_SCALE, CAMP_TIERS, COLORS, SHARED, hash01, makeBear, makeBench, makeCampTier,
+  BEAR_BODY_SCALE, CAMP_TIERS, COLORS, SHARED, bubbleTexture, hash01, makeBear, makeBench, makeCampTier,
   makeCarryBox, makeCart, makeCrate, makeDropMesh, makeFenceRun, makeGateWall, makeIconTextLabel,
   makeMatMesh, makePadLabel, makePadMesh, makePileStack, makePlayer, makeRailMesh, makeRock,
   makeSawmill, makeSeam, makeSlab, makeBubbleLabel, makeTextLabel, makeTool, makeTree, makeTurret,
@@ -29,6 +29,10 @@ const SHADOW_EXTENT = 30;
 const ROAD_Z = 7;
 /** Width of `GEO.hpBar`; the drain offset has to match the authored geometry. */
 const HP_BAR_WIDTH = 1.36;
+/** How long the player's coat stays tinted after a bear connects. */
+const HIT_FLASH_TIME = 0.3;
+const COAT_BASE = new THREE.Color(COLORS.playerCoat);
+const COAT_HIT = new THREE.Color(0xff3b30);
 const FENCE_FROM = -44, FENCE_TO = 44;
 
 interface FloatingText { sprite: THREE.Sprite; life: number }
@@ -86,6 +90,9 @@ export class Renderer {
   private lastToolKey = '';
   private lastCarryKey = '';
   private lastCampTier = -1;
+  private stationBubbles = new Map<string, THREE.Sprite>();
+  private lastMatCash = new Map<string, number>();
+  private hitFlash = 0;
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
@@ -304,9 +311,12 @@ export class Renderer {
     for (const st of state.stations) {
       const bench = setShadow(makeBench(), true);
       bench.position.set(st.pos.x, 0, st.pos.z);
-      const label = makeBubbleLabel(st.resource);
+      const count = Math.floor(st.matCash);
+      const label = makeBubbleLabel(st.resource, count);
       label.position.y = 3.1;
       bench.add(label);
+      this.stationBubbles.set(st.id, label);
+      this.lastMatCash.set(st.id, count);
       this.scene.add(bench);
       const mat = makeMatMesh();
       mat.position.set(st.matPos.x, 0, st.matPos.z);
@@ -356,7 +366,10 @@ export class Renderer {
     this.meshes.clear();
     this.dropMeshes.clear();
     this.gates.clear();
+    this.stationBubbles.clear();
+    this.lastMatCash.clear();
     this.snowLayers = [];
+    this.hitFlash = 0;
   }
 
   /** Full teardown + rebuild (used by Restart). */
@@ -381,7 +394,7 @@ export class Renderer {
 
   sync(state: GameState, dt: number): void {
     this.t += dt;
-    this.syncPlayer(state);
+    this.syncPlayer(state, dt);
     for (const tree of state.trees) {
       // Trees never move: place once with its deterministic size/spin, then freeze the matrix
       // and only toggle visibility.
@@ -459,6 +472,14 @@ export class Renderer {
     }
     for (const st of state.stations) {
       this.syncPile(`cash-${st.id}`, st.matPos.x, st.matPos.z, st.matCash, COLORS.cash, 10, 24, 0.07);
+      // Repainting a 256² canvas every frame would be wasteful and pointless: only redraw when
+      // the whole-cash figure the bubble actually shows has moved.
+      const count = Math.floor(st.matCash);
+      const bubble = this.stationBubbles.get(st.id);
+      if (bubble && this.lastMatCash.get(st.id) !== count) {
+        this.lastMatCash.set(st.id, count);
+        bubble.material.map = bubbleTexture(st.resource, count);
+      }
     }
     for (const turret of state.turrets) {
       const m = this.meshes.get(turret.id);
@@ -571,11 +592,18 @@ export class Renderer {
     for (let i = 0; i < g.children.length; i++) g.children[i].visible = i < boxes;
   }
 
-  private syncPlayer(state: GameState): void {
+  private syncPlayer(state: GameState, dt: number): void {
     const p = state.player;
     const m = this.ensure('player', () => setShadow(makePlayer(), true)) as THREE.Group;
     m.position.set(p.pos.x, 0, p.pos.z);
-    const refs = refsOf<PersonRefs>(m);
+    const refs = refsOf<PlayerRefs>(m);
+    // Hit flash: full red on impact, decaying back to the coat colour over HIT_FLASH_TIME.
+    if (this.hitFlash > 0) {
+      this.hitFlash = Math.max(0, this.hitFlash - dt);
+      refs.coat.color.copy(COAT_BASE).lerp(COAT_HIT, this.hitFlash / HIT_FLASH_TIME);
+    } else if (!refs.coat.color.equals(COAT_BASE)) {
+      refs.coat.color.copy(COAT_BASE);
+    }
     const toolKey = `${p.tool}|${p.hasPickaxe}`;
     if (toolKey !== this.lastToolKey) {
       this.lastToolKey = toolKey;
@@ -620,6 +648,7 @@ export class Renderer {
 
   applyEvents(events: GameEvent[]): void {
     for (const e of events) {
+      if (e.type === 'playerHit') this.hitFlash = HIT_FLASH_TIME;
       let sprite: THREE.Sprite | null = null;
       if (e.type === 'sell') sprite = makeIconTextLabel('cash', `+${e.cash}`);
       else if (e.type === 'unlock') sprite = makeTextLabel('Unlocked!');

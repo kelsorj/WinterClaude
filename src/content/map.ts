@@ -13,8 +13,10 @@ export const ZONE_RECTS: Record<GateZone, Rect> = {
 export const PLAYER_SPAWN: Vec2 = v(0, 0);
 export const DEPOT_POS: Vec2 = v(18, 0);
 /**
- * Where thawed villagers walk to: just outside the camp building's south doorway (the gap in
- * the south face at z ≈ 3.8, present at every tier). The building's west face is solid wall.
+ * Where thawed villagers walk to: outside the camp building's south face, which is the approach
+ * at every tier. What sits there varies — tiers 0-1 have no south wall at all, tier 2 closes it
+ * with a barn door, tier 3 leaves a gap at z ≈ 3.8 and tier 4 at z ≈ 4.3 — so this stands clear
+ * of all five rather than aiming at any one doorway.
  */
 export const CAMP_POS: Vec2 = v(18, 4.4);
 

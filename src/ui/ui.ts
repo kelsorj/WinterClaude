@@ -1,4 +1,4 @@
-import { drawIcon } from '../render/meshes';
+import { drawIcon, type IconKind } from '../render/meshes';
 import type { Currency, GameState } from '../game/state';
 
 export interface UICallbacks {
@@ -24,7 +24,7 @@ const ICON_PX = 26;
  * sidebar is the same unmistakable gold bar seen on the bench bubbles (spec Amendment 1C/1D).
  * Emoji were dropped for exactly this reason: they render as grey blobs on some platforms.
  */
-function iconCanvas(kind: Currency): HTMLCanvasElement {
+function iconCanvas(kind: IconKind): HTMLCanvasElement {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(ICON_PX * dpr);
@@ -51,12 +51,16 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
     hud.appendChild(row);
     rows.set(key, { el: row, value, prev: 0 });
   }
-  document.body.appendChild(hud);
-
-  const rescued = document.createElement('div');
-  rescued.id = 'rescued';
+  // Rescued villagers close the sidebar as a final row, so every number the player tracks sits
+  // in one column (spec Amendment 1D) with a drawn icon rather than an emoji (1C).
+  const rescuedRow = document.createElement('div');
+  rescuedRow.className = 'res';
+  const rescuedValue = document.createElement('span');
+  rescuedValue.textContent = '0/0';
+  rescuedRow.append(iconCanvas('villager'), rescuedValue);
+  hud.appendChild(rescuedRow);
   let rescuedText = '';
-  document.body.appendChild(rescued);
+  document.body.appendChild(hud);
 
   const pause = overlay();
   const pausePanel = panel('Paused');
@@ -104,10 +108,10 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
         row.prev = val;
       }
     }
-    const text = `\u{1F464} ${state.rescued}/${state.villagers.length} rescued`;
+    const text = `${state.rescued}/${state.villagers.length}`;
     if (text !== rescuedText) {
       rescuedText = text;
-      rescued.textContent = text;
+      rescuedValue.textContent = text;
     }
     if (state.won && !winShown) {
       winShown = true;

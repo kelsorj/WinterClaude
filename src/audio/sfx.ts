@@ -20,7 +20,9 @@ export function initAudio(): void {
     gain.connect(comp).connect(ctx.destination);
     master = gain;
   }
-  if (ctx.state === 'suspended') void ctx.resume();
+  // Autoplay policy can reject this if the call did not come from a real gesture; a rejected
+  // promise here is expected, not an error worth surfacing.
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
 }
 
 export function isMuted(): boolean { return muted; }

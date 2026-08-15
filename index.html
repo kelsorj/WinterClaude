@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Frostfall Camp</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #dfe9f0; font-family: system-ui, sans-serif; }
+  #app { position: fixed; inset: 0; }
+  #hud { position: fixed; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 6px; z-index: 10; }
+  .res { background: rgba(255,255,255,.85); border-radius: 10px; padding: 4px 12px; min-width: 96px;
+         display: flex; justify-content: space-between; gap: 10px; font-weight: 700; font-size: 18px;
+         box-shadow: 0 2px 6px rgba(0,0,0,.15); transition: background .3s; }
+  .res.flash-up { background: #c8f7c5; transition: none; }
+  .res.flash-down { background: #f7c5c5; transition: none; }
+  #rescued { position: fixed; bottom: 12px; left: 12px; background: rgba(255,255,255,.85); border-radius: 10px;
+             padding: 6px 14px; font-weight: 700; font-size: 18px; z-index: 10; }
+  .overlay { position: fixed; inset: 0; background: rgba(20,40,60,.55); display: flex; align-items: center;
+             justify-content: center; z-index: 20; }
+  .panel { background: #fff; border-radius: 16px; padding: 28px 36px; text-align: center; min-width: 280px; }
+  .panel h1 { margin: 0 0 12px; }
+  .panel p { margin: 6px 0; }
+  .panel button { display: block; width: 100%; margin-top: 10px; padding: 10px; font-size: 16px; font-weight: 700;
+                  border: 0; border-radius: 10px; background: #3aa655; color: #fff; cursor: pointer; }
+  .panel button.secondary { background: #888; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

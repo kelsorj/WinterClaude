@@ -44,6 +44,7 @@ export type UnlockEffect =
 export interface Pad {
   id: string; pos: Vec2; currency: Currency; cost: number;
   paid: number; done: boolean; effect: UnlockEffect; requires?: string;
+  payTimer: number;
 }
 
 export interface Turret { id: string; pos: Vec2; range: number; cd: number; active: boolean; output: number }

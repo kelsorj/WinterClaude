@@ -88,4 +88,13 @@ describe('padsTick', () => {
     expect(state.player.cash).toBeCloseTo(90);
     expect(state.pads[0].paid).toBe(10);
   });
+
+  it('resource payments stay in whole units', () => {
+    const state = blankState();
+    state.pads.push(aPad({ currency: 'wood', cost: 5, effect: { type: 'carry', add: 12 } }));
+    state.player.carry.wood = 8;
+    for (let i = 0; i < 20; i++) padsTick(state, 1 / 60);
+    expect(Number.isInteger(state.player.carry.wood)).toBe(true);
+    expect(state.pads[0].paid + state.player.carry.wood).toBe(8);
+  });
 });

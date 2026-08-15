@@ -4,8 +4,10 @@ import type { GameState, ResourceKind, SellStation } from '../state';
 
 /** Convert `amount` of `kind` into cash on the station's mat. Used by player deposits and villager haulers. */
 export function depositToStation(state: GameState, st: SellStation, kind: ResourceKind, amount: number): void {
+  if (amount <= 0) return;
   const cash = amount * SELL_RATE[kind];
   st.matCash += cash;
+  // 'earned' counts cash created on mats (revenue), not cash collected.
   state.stats.earned += cash;
   state.events.push({ type: 'sell', pos: v(st.pos.x, st.pos.z), cash });
 }

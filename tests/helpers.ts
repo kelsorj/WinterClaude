@@ -37,7 +37,7 @@ export const aStation = (over: Partial<SellStation> = {}): SellStation =>
 
 export const aPad = (over: Partial<Pad> = {}): Pad =>
   ({ id: 'p1', pos: v(0, 1), currency: 'cash', cost: 10, paid: 0, done: false,
-     effect: { type: 'tool', tool: 'axe' }, ...over });
+     effect: { type: 'tool', tool: 'axe' }, payTimer: 0, ...over });
 
 export const aRail = (over: Partial<Rail> = {}): Rail =>
   ({ id: 'r1', points: [v(0, 0), v(10, 0)], sourceType: 'sawmill', sourceId: 'm1', ...over });

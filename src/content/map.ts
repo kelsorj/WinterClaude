@@ -87,7 +87,7 @@ export function padDefs(): Pad[] {
   const p = (
     id: string, pos: Vec2, currency: Pad['currency'], cost: number,
     effect: Pad['effect'], requires?: string,
-  ): Pad => ({ id, pos, currency, cost, paid: 0, done: false, effect, requires });
+  ): Pad => ({ id, pos, currency, cost, paid: 0, done: false, effect, requires, payTimer: 0 });
   return [
     p('p-axe',        v(-4, -4),   'cash', 10, { type: 'tool', tool: 'axe' }),
     p('p-carry1',     v(-10, -4),  'cash', 30, { type: 'carry', add: 12 }, 'p-axe'),

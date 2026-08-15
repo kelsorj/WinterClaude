@@ -14,7 +14,7 @@ export function machinesTick(state: GameState, dt: number): void {
       .filter((b) => b.state !== 'dead' && state.zonesOpen[b.zone] && dist(b.pos, t.pos) <= t.range)
       .sort((a, b) => dist(a.pos, t.pos) - dist(b.pos, t.pos));
     const target = inRange[0];
-    if (!target) continue;
+    if (!target) { t.cd = 0; continue; }
     t.cd = TURRET_PERIOD;
     target.hp -= TURRET_DMG;
     state.events.push({ type: 'bearHit', pos: v(target.pos.x, target.pos.z) });
@@ -28,7 +28,7 @@ export function machinesTick(state: GameState, dt: number): void {
     const tree = state.trees.find(
       (tr) => tr.respawn === 0 && state.zonesOpen[tr.zone] && dist(tr.pos, s.pos) <= s.radius,
     );
-    if (!tree) continue;
+    if (!tree) { s.timer = 0; continue; }
     s.timer = SAWMILL_PERIOD;
     tree.respawn = TREE_RESPAWN;
     s.output += TREE_YIELD;

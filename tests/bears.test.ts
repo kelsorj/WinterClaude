@@ -67,4 +67,23 @@ describe('bearsTick', () => {
     ticks(state, 2);
     expect(state.bears[0].pos.x).toBeGreaterThanOrEqual(-30);
   });
+
+  it('clamps stacked knockback to twice the swipe impulse', () => {
+    const state = blankState();
+    state.bears.push(
+      aBear({ id: 'b1', state: 'aggro', pos: v(1, 0.2), home: v(1, 0.2) }),
+      aBear({ id: 'b2', state: 'aggro', pos: v(1, -0.2), home: v(1, -0.2) }),
+      aBear({ id: 'b3', state: 'aggro', pos: v(1.2, 0), home: v(1.2, 0) }),
+    );
+    bearsTick(state, 1 / 60);
+    expect(Math.hypot(state.player.knockback.x, state.player.knockback.z)).toBeCloseTo(20);
+  });
+
+  it('bears slide along sealed walls instead of freezing', () => {
+    const state = blankState();
+    state.player.pos = v(-40, -5);
+    state.bears.push(aBear({ state: 'aggro', pos: v(-28, -8), home: v(-28, -8) }));
+    ticks(state, 3);
+    expect(state.bears[0].pos.z).toBeGreaterThan(-6.5); // rounded the quarry corner via the slide
+  });
 });

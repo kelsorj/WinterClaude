@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../src/game/init';
-import { thawCost } from '../src/content/balance';
+import { PAD_RANGE, thawCost } from '../src/content/balance';
 import type { ZoneId } from '../src/game/state';
 import { ZONE_RECTS } from '../src/content/map';
-import { inRect } from '../src/game/math';
+import { dist, inRect } from '../src/game/math';
 
 describe('createInitialState', () => {
   const state = createInitialState();
@@ -113,5 +113,15 @@ describe('createInitialState', () => {
       if (pad.effect.type !== 'gate') continue;
       expect(inRect(pad.pos, ZONE_RECTS[pad.effect.zone as keyof typeof ZONE_RECTS])).toBe(false);
     }
+  });
+
+  it('every pad has a positive cost', () => {
+    for (const pad of state.pads) expect(pad.cost).toBeGreaterThan(0);
+  });
+
+  it('pads are spaced more than two pad-ranges apart', () => {
+    for (const a of state.pads)
+      for (const b of state.pads)
+        if (a.id < b.id) expect(dist(a.pos, b.pos)).toBeGreaterThan(PAD_RANGE * 2);
   });
 });

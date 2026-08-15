@@ -267,3 +267,33 @@ without requiring any thawed villagers, fixing "the fort fills up with meat
 and nothing moves it." Crew members are not rescuable, don't count toward
 the rescued total or the win condition; the win now requires all 18 pads.
 Rescued-villager haulers keep working alongside the crew.
+
+---
+
+## Amendment 3 — Grand Fort gold mining and the 10× world (2026-08-15, user-directed)
+
+### A. Grand Fort miners
+Completing the **Grand Fort (camp tier 4)** activates **2 miner crew**
+(pickaxe-carrying, distinct coat color, idle at the fort until tier 4). Each
+miner cycles: walk to the nearest respawned gold seam, mine it (a few seconds,
+seam respawn unchanged), carry the gold back to the depot, repeat. From the
+depot the existing distributor crew / haulers move it to the gold bench where
+customers buy it — completing an automated gold pipeline. Miners follow the
+same crew rules as Amendment 2B (never rescuable, excluded from the rescued
+count and win, saved by derivation from the camp tier).
+
+### B. The 10× world
+The world grows to at least 10× its current area (bounds roughly ±190 × ±125).
+The existing camp, road, gated zones, rails, and fences stay exactly where
+they are; everything beyond becomes open snowy wilderness: a vastly larger
+forest (~2,500–3,500 trees, same layered look, still finite and permanently
+felled), scattered bear packs (~60 total), and additional gold outcrops
+(~20 seams, minable outside the quarry once the pickaxe is owned). The road
+extends across the full width. Snowfall follows the camera rather than a
+fixed volume; the ground plane and fog scale to match.
+
+**Performance requirement:** trees (and their stumps) move to
+`THREE.InstancedMesh` — two instanced draws for the entire forest — since
+per-mesh trees at this population would blow the mesh budget. Per-instance
+scale/rotation variation and shadow casting are preserved. All other entity
+counts stay per-mesh.

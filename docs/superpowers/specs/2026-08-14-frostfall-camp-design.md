@@ -164,3 +164,53 @@ the whole campaign.
   (fixed routes only — player routing is Phase 3), no villager jobs (Phase 2), no
   enemies attacking the camp (Phase 4), no weather/survival meters (Phase 5), no
   monetization mechanics of any kind from the ad (it's a real game, not an ad).
+
+---
+
+## Amendment 1 — Video-fidelity corrections (2026-08-14, user-directed)
+
+After playing the first rendered build, the user re-grounded four areas in the
+reference video. These supersede the corresponding sections above.
+
+### A. Trees are finite; the forest is gigantic
+Trees never respawn. A felled tree leaves a permanent stump, and deforestation
+visibly spreads across the map, as in the ad. The forest is much larger:
+target 250–350 trees (dense starter forest, denser deep forest, northern tree
+band, sparse trees in the hunting grounds). Total wood comfortably exceeds the
+sum of all wood costs. Gold seams keep respawning (gold is repeatedly mined in
+the ad and gold sinks require more than one seam cycle). The sawmill will
+eventually clear its radius and idle — accepted for Phase 1.
+
+### B. Camp building tiers (the ad's "hut grows into a fort")
+The depot is a growing structure, built by pouring wood into camp pads —
+the ad's central spectacle. Four tiers, each a pad with effect
+`{ type: 'camp'; tier: n }` setting `state.campTier`:
+
+1. **Shelter Hut** — wood 12, first unlock in the game (no requires).
+   Platform, corner posts, crates.
+2. **Stockade** — wood 40, requires the deep-forest gate. Log walls and
+   red barn doors around the platform.
+3. **Fort** — wood 90, requires the scythe. Full red-walled fort; depot
+   stockpiles render inside on shelves.
+4. **Grand Fort** — gold 12, requires the pickaxe. Log-cabin walls, banner,
+   cash-vault look.
+
+Rewired requires-chain (single-parent, acyclic):
+p-camp1 → p-axe → {p-carry1, p-speed1, p-gate-deep} → p-camp2 →
+{p-turret1, p-sawmill1} → p-scythe (req turret1) → p-camp3 →
+p-gate-hunt → p-turret2; p-gate-quarry (req sawmill1) → p-pickaxe →
+{p-carry2, p-speed2, p-camp4}. Win = all 17 pads + all villagers thawed.
+
+### C. Commodity iconography
+The third commodity is unmistakably **gold**. Labels stop using emoji (which
+render inconsistently) and use canvas-drawn icons: brown log, red steak with
+white bone, yellow gold bar with shine, green bill with $ — used on benches,
+pads, and the HUD.
+
+### D. Money piles and sidebar HUD
+Cash on station mats renders as a **grid stack of green bill boxes** growing
+with the amount (capped mesh count), matching the ad's cash piles next to the
+commodity benches. The HUD (Task 16) is a **left sidebar** listing cash and
+carried wood/meat/gold plus the rescued counter — carried amounts always
+visible at the side of the screen, per user preference (supersedes "top-right
+HUD" above).

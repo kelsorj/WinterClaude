@@ -22,7 +22,8 @@ export function createInitialState(): GameState {
     seams: seamDefs().map((d, i) => ({ id: `seam${i}`, zone: d.zone, pos: d.pos, hp: SEAM_HP, respawn: 0 })),
     bears: bearDefs().map((d, i) => ({
       id: `bear${i}`, zone: d.zone, pos: v(d.pos.x, d.pos.z), home: v(d.pos.x, d.pos.z),
-      hp: BEAR_HP, maxHp: BEAR_HP, state: 'sleep' as const, respawn: 0, attackCd: 0, eaten: 0,
+      hp: BEAR_HP, maxHp: BEAR_HP, state: 'sleep' as const, respawn: 0, attackCd: 0,
+      eaten: 0, raidDelay: 0,
     })),
     drops: [],
     pads: padDefs(),

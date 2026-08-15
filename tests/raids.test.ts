@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { bearsTick, raidInterval } from '../src/game/systems/bears';
+import { bearsTick, raidInterval, raidPackSize } from '../src/game/systems/bears';
 import { machinesTick } from '../src/game/systems/machines';
 import { killBear } from '../src/game/systems/harvest';
 import {
-  BEAR_MEAT, RAID_INTERVAL, RAID_INTERVAL_MIN, RAID_RECRUIT_RADIUS, RAID_SATIETY,
+  BEAR_MEAT, RAID_INTERVAL, RAID_INTERVAL_MIN, RAID_PACK_BASE, RAID_PACK_MAX, RAID_RECRUIT_RADIUS,
+  RAID_SATIETY, RAID_SPEED, RAID_SPEED_MULT, RAID_STAGGER,
 } from '../src/content/balance';
 import { createInitialState } from '../src/game/init';
 import { deserialize, serialize } from '../src/game/save';
@@ -67,20 +68,56 @@ describe('raid cadence', () => {
     expect(raidInterval(500)).toBe(RAID_INTERVAL_MIN);
   });
 
-  it('sends one raider at a time, not the whole pack', () => {
+  it('sends a pack, not a single bear', () => {
     const state = raidableCamp();
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       state.bears.push(aBear({ id: `extra${i}`, pos: v(30 + i, 6), home: v(30 + i, 6) }));
     }
     ticks(state, RAID_INTERVAL + 0.5);
-    expect(state.bears.filter((b) => b.state !== 'sleep')).toHaveLength(1);
+    const raiders = state.bears.filter((b) => b.state !== 'sleep');
+    expect(raiders).toHaveLength(RAID_PACK_BASE);
+  });
+
+  it('grows the pack with the world, up to the cap', () => {
+    expect(raidPackSize(0)).toBe(RAID_PACK_BASE);
+    expect(raidPackSize(4)).toBe(RAID_PACK_BASE + 1);
+    expect(raidPackSize(8)).toBe(RAID_PACK_BASE + 2);
+    expect(raidPackSize(500)).toBe(RAID_PACK_MAX);
+    // And the simulation actually fields the bigger pack.
+    const state = raidableCamp();
+    state.expansions = 8;
+    for (let i = 0; i < 8; i++) {
+      state.bears.push(aBear({ id: `extra${i}`, pos: v(30 + i, 6), home: v(30 + i, 6) }));
+    }
+    ticks(state, raidInterval(8) + 0.5);
+    expect(state.bears.filter((b) => b.state !== 'sleep')).toHaveLength(raidPackSize(8));
+  });
+
+  it('staggers the pack so it breaks as a wave rather than setting off in lockstep', () => {
+    const state = raidableCamp();
+    for (let i = 0; i < 8; i++) {
+      state.bears.push(aBear({ id: `extra${i}`, pos: v(30 + i, 6), home: v(30 + i, 6) }));
+    }
+    ticks(state, RAID_INTERVAL + 0.02);
+    const delays = state.bears.filter((b) => b.state === 'raiding').map((b) => b.raidDelay).sort();
+    expect(delays).toHaveLength(RAID_PACK_BASE);
+    expect(delays[0]).toBeCloseTo(0, 1);                       // one sets off at once
+    expect(delays[delays.length - 1]).toBeCloseTo(RAID_STAGGER * (RAID_PACK_BASE - 1), 1);
+
+    // The held-back member really does hold: it is a raider that has not started walking.
+    const waiting = state.bears.find((b) => b.raidDelay > 0.1)!;
+    const where = { ...waiting.pos };
+    ticks(state, 0.2);
+    expect(waiting.pos).toEqual(where);
+    ticks(state, RAID_STAGGER + 0.2);
+    expect(waiting.pos).not.toEqual(where);
   });
 });
 
 describe('a raid', () => {
   it('walks to the depot and eats out of it', () => {
     const state = raidableCamp({ state: 'raiding' });
-    ticks(state, 12);
+    ticks(state, 8); // 20 units at the charging pace is ~6.6 s
     const bear = state.bears[0];
     expect(bear.state).toBe('feeding');
     expect(dist(bear.pos, state.depotPos)).toBeLessThan(3);
@@ -92,7 +129,7 @@ describe('a raid', () => {
     const state = raidableCamp({ state: 'raiding' });
     state.depot.meat = 0;
     state.stations[0].stock = 20;
-    ticks(state, 14);
+    ticks(state, 9);
     expect(state.bears[0].state).toBe('feeding');
     expect(state.stations[0].stock).toBeLessThan(20);
     expect(state.depot.meat).toBe(0);
@@ -109,7 +146,9 @@ describe('a raid', () => {
 
   it('leaves once it has eaten its fill, and goes back to sleep at home', () => {
     const state = raidableCamp({ state: 'raiding' });
-    ticks(state, 30);
+    // In: 6.6 s charging. Eating: 5 s. Home: 8.9 s at the slower amble. Comfortably inside the
+    // 24 s cadence, so the pack timer cannot send it back for seconds and confuse the count.
+    ticks(state, 22);
     const bear = state.bears[0];
     expect(state.depot.meat).toBeCloseTo(20 - RAID_SATIETY, 5); // it took its five and no more
     expect(bear.state).toBe('sleep');
@@ -129,7 +168,7 @@ describe('a raid', () => {
 
   it('turns on a player who walks up to it, and stops eating', () => {
     const state = raidableCamp({ state: 'raiding' });
-    ticks(state, 12);
+    ticks(state, 8);
     expect(state.bears[0].state).toBe('feeding');
     const eatenBefore = state.bears[0].eaten;
     const leftBefore = state.depot.meat;
@@ -140,9 +179,23 @@ describe('a raid', () => {
     expect(state.depot.meat).toBe(leftBefore);
   });
 
+  it('charges the camp and ambles home, not the other way round', () => {
+    const inbound = raidableCamp({ state: 'raiding' });
+    const before = inbound.bears[0].pos.x;
+    ticks(inbound, 1);
+    const charge = before - inbound.bears[0].pos.x;
+    expect(charge).toBeCloseTo(RAID_SPEED * RAID_SPEED_MULT, 1);
+
+    // Sated, so its goal is home: same state, ordinary pace.
+    const homeward = raidableCamp({ state: 'raiding', eaten: RAID_SATIETY, pos: v(28, 0) });
+    const start = homeward.bears[0].pos.x;
+    ticks(homeward, 1);
+    expect(homeward.bears[0].pos.x - start).toBeCloseTo(RAID_SPEED, 1);
+  });
+
   it('drops what it swallowed when it is killed', () => {
     const state = raidableCamp({ state: 'raiding' });
-    ticks(state, 15);
+    ticks(state, 12);
     const bear = state.bears[0];
     const eaten = Math.floor(bear.eaten);
     expect(eaten).toBeGreaterThan(0);

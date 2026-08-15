@@ -79,28 +79,45 @@ export const BEAR_LEASH = 14;
  * Bear raids (Amendment 6B). Bears want the meat, so the camp's stockpile is a standing
  * invitation: every so often one wilderness bear near the camp wakes up and walks in for it.
  *
- * `RAID_INTERVAL` is the cadence at ring 0 — one raider every forty seconds, which at
- * `RAID_SATIETY` 5 and `RAID_FEED_RATE` 1/s costs an undefended camp about 7 meat a minute
- * against the several hundred a working meat pipeline turns over. It is meant to be a tax and a
- * reason to buy arrow stations, never a threat to the run: there is no lose state and the worst
- * outcome is eaten meat.
+ * Raids come in PACKS, on a cadence of `RAID_INTERVAL`. One bear every forty seconds read as a
+ * nuisance rather than a siege, so the unit of a raid is a pack of `RAID_PACK_BASE` and the
+ * cadence is 24 s. At `RAID_SATIETY` 5 and `RAID_FEED_RATE` 1/s that is 10 meat per raid and
+ * 25 a minute out of an undefended camp — a real bite out of a meat pipeline that turns over a
+ * few hundred, and a straight answer to "why would I buy arrow stations". It is still only a
+ * tax: there is no lose state, and the worst outcome is eaten meat.
  *
- * The cadence quickens with the world (more wilderness, more bears) but only mildly, and never
- * past `RAID_INTERVAL_MIN`: a camp fifteen expeditions deep would otherwise be under permanent
- * siege by arithmetic rather than by design.
+ * Both the pack and the cadence scale with the world (more wilderness, more bears), the pack in
+ * whole bears every four expeditions and the cadence mildly and never past `RAID_INTERVAL_MIN`.
+ * The caps matter: without them a camp fifteen expeditions deep would be under permanent siege by
+ * arithmetic rather than by design, and the shape the numbers are tuned to is that two stations
+ * hold ring 0 and all four are wanted by the middle rings.
+ *
+ * `RAID_STAGGER` is the delay between pack members setting off. It is deliberately short — the
+ * pack should break over the fence as a loose wave, not file in one bear at a time — and it is
+ * what stops five bears walking the same line superimposed on each other.
  *
  * `RAID_RECRUIT_RADIUS` is how far out a raider can be drawn from. It reaches well past the
  * starter map into the wilderness packs, so raids keep coming once the near bears are dead or
  * sated, but not so far that a bear spends five minutes walking in from the edge of the world.
  */
-export const RAID_INTERVAL = 40;
+export const RAID_INTERVAL = 24;
 export const RAID_INTERVAL_MIN = 15;
 export const RAID_INTERVAL_PER_RING = 0.12;
+export const RAID_PACK_BASE = 2;
+export const RAID_PACK_PER_RINGS = 4;
+export const RAID_PACK_MAX = 5;
+export const RAID_STAGGER = 0.7;
 export const RAID_RECRUIT_RADIUS = 80;
 export const RAID_SATIETY = 5;
 export const RAID_FEED_RATE = 1;
-/** Raiders lumber in at two thirds pace; a bear that has seen the player still charges at BEAR_SPEED. */
+/**
+ * A bear's raid pace. The base is two thirds of a chase — a bear crossing open country is not
+ * sprinting — but a raider with the camp in front of it hustles: `RAID_SPEED_MULT` applies only
+ * while it is walking IN. A sated bear ambling home does it at the base pace, which is what makes
+ * an arriving wave and a departing one read differently from across the map.
+ */
 export const RAID_SPEED = BEAR_SPEED * 0.66;
+export const RAID_SPEED_MULT = 1.35;
 /** How close a raider must get to the depot or a bench before it starts eating. */
 export const RAID_FEED_RANGE = 2.4;
 /** A raider this close to the player turns on them, interrupting a meal. */

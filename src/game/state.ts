@@ -37,6 +37,12 @@ export interface Bear {
   hp: number; maxHp: number; state: BearState; respawn: number; attackCd: number;
   /** Meat eaten on the current raid. Killing a raider drops this on top of the usual yield. */
   eaten: number;
+  /**
+   * Seconds this raider still waits at home before setting off. A raid recruits a pack at once
+   * and staggers it here, so the bears break over the fence as a loose wave instead of setting
+   * out in lockstep and walking the whole way superimposed on one another.
+   */
+  raidDelay: number;
 }
 
 export interface Drop { id: string; kind: Currency; amount: number; pos: Vec2 }

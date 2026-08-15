@@ -1,7 +1,8 @@
 import {
   BEAR_ATTACK_CD, BEAR_ATTACK_RANGE, BEAR_KNOCKBACK, BEAR_LEASH, BEAR_SPEED, RAID_AGGRO_RANGE,
   RAID_FEED_RANGE, RAID_FEED_RATE, RAID_HOME_RANGE, RAID_INTERVAL, RAID_INTERVAL_MIN,
-  RAID_INTERVAL_PER_RING, RAID_RECRUIT_RADIUS, RAID_SATIETY, RAID_SPEED,
+  RAID_INTERVAL_PER_RING, RAID_PACK_BASE, RAID_PACK_MAX, RAID_PACK_PER_RINGS,
+  RAID_RECRUIT_RADIUS, RAID_SATIETY, RAID_SPEED, RAID_SPEED_MULT, RAID_STAGGER,
 } from '../../content/balance';
 import { add, dist, hash01, norm, scale, toward, v, type Vec2 } from '../math';
 import type { Bear, GameState } from '../state';
@@ -18,8 +19,19 @@ export function raidInterval(expansions: number): number {
   );
 }
 
-/** How many of the nearest eligible bears a raid draws from; see `triggerRaid`. */
-const RAID_CANDIDATES = 8;
+/** How many of the nearest eligible bears a raid draws its pack from; see `triggerRaid`. */
+const RAID_CANDIDATES = 12;
+
+/**
+ * How many bears come at once. A raid is a pack, not a bear: one at a time read as a nuisance
+ * rather than the ad's siege. It grows by a whole bear every `RAID_PACK_PER_RINGS` expeditions —
+ * the world's bear population grows with its rings — and stops at `RAID_PACK_MAX`, because a camp
+ * far enough out would otherwise face a wall of bears that no four towers could answer.
+ */
+export function raidPackSize(expansions: number): number {
+  const rings = Math.max(0, Math.floor(expansions));
+  return Math.min(RAID_PACK_MAX, RAID_PACK_BASE + Math.floor(rings / RAID_PACK_PER_RINGS));
+}
 
 /** The meat bench, which is a raider's second choice after the depot itself. */
 function meatStand(state: GameState): { pos: Vec2; stock: number } | undefined {
@@ -64,17 +76,18 @@ function stepToward(state: GameState, b: Bear, to: Vec2, speed: number, dt: numb
 }
 
 /**
- * Wake one sleeping bear near the camp and send it in for the meat (Amendment 6B).
+ * Wake a pack of sleeping bears near the camp and send them in for the meat (Amendment 6B).
  *
  * Nothing is drawn from an empty camp: with no meat in the depot and none on the bench there is
  * nothing to raid, so the timer simply holds at the interval and the first delivery that matters
- * draws a bear soon after — the same "a bare shelf draws no shopper, a stocked one draws one at
+ * draws a pack soon after — the same "a bare shelf draws no shopper, a stocked one draws one at
  * once" rule the benches use. It is also what keeps the opening hour of a run alone: a hatchet
  * and no meat is not a camp worth raiding.
  *
- * The pick is the nearest handful rather than the single nearest, chosen by a hash of the clock,
- * so the same bear does not walk the same path every time while raiders still come from the
- * country around the camp rather than from the edge of the world.
+ * The pack is taken from the nearest dozen rather than the nearest N, starting at an offset
+ * hashed off the clock, so raiders still come from the country around the camp but the same bears
+ * do not walk the same line every time. Each member's `raidDelay` staggers its departure, which
+ * is what makes the pack read as a wave breaking rather than a column marching.
  */
 function triggerRaid(state: GameState, dt: number): void {
   const interval = raidInterval(state.expansions);
@@ -87,9 +100,14 @@ function triggerRaid(state: GameState, dt: number): void {
     .slice(0, RAID_CANDIDATES);
   if (eligible.length === 0) return;
   state.raidTimer = 0;
-  const pick = eligible[Math.floor(hash01(`raid${state.time.toFixed(1)}`) * eligible.length)];
-  pick.state = 'raiding';
-  pick.eaten = 0;
+  const pack = Math.min(raidPackSize(state.expansions), eligible.length);
+  const from = Math.floor(hash01(`raid${state.time.toFixed(1)}`) * eligible.length);
+  for (let i = 0; i < pack; i++) {
+    const bear = eligible[(from + i) % eligible.length];
+    bear.state = 'raiding';
+    bear.eaten = 0;
+    bear.raidDelay = i * RAID_STAGGER;
+  }
 }
 
 /** Eat from whatever the raider is standing at, and stop when full or when it runs out. */
@@ -122,7 +140,7 @@ export function bearsTick(state: GameState, dt: number): void {
       b.respawn -= dt;
       if (b.respawn <= 0) {
         b.respawn = 0; b.state = 'sleep'; b.hp = b.maxHp; b.pos = v(b.home.x, b.home.z);
-        b.attackCd = 0; b.eaten = 0;
+        b.attackCd = 0; b.eaten = 0; b.raidDelay = 0;
       }
       continue;
     }
@@ -135,14 +153,22 @@ export function bearsTick(state: GameState, dt: number): void {
       } else if (b.state === 'feeding') {
         feed(state, b, dt);
         continue;
+      } else if (b.raidDelay > 0) {
+        // Still waiting its turn to set off; it is a raider, it just has not started walking.
+        b.raidDelay = Math.max(0, b.raidDelay - dt);
+        continue;
       } else {
         const goal = raidGoal(state, b);
-        stepToward(state, b, goal.pos, RAID_SPEED, dt);
+        // Charging the camp is faster than ambling home from it: the multiplier applies only on
+        // the way in, which is what makes an arriving wave and a departing one read differently.
+        const speed = goal.kind === 'home' ? RAID_SPEED : RAID_SPEED * RAID_SPEED_MULT;
+        stepToward(state, b, goal.pos, speed, dt);
         if (goal.kind === 'home') {
           if (dist(b.pos, b.home) <= RAID_HOME_RANGE) {
             b.pos = v(b.home.x, b.home.z);
             b.state = 'sleep';
             b.eaten = 0;
+            b.raidDelay = 0;
           }
         } else if (dist(b.pos, goal.pos) <= RAID_FEED_RANGE) {
           b.state = 'feeding';
@@ -153,7 +179,8 @@ export function bearsTick(state: GameState, dt: number): void {
     if (b.state !== 'aggro') continue;
     const d = dist(b.pos, p.pos);
     if (d > BEAR_LEASH) {
-      b.state = 'sleep'; b.hp = b.maxHp; b.pos = v(b.home.x, b.home.z); b.eaten = 0;
+      b.state = 'sleep'; b.hp = b.maxHp; b.pos = v(b.home.x, b.home.z);
+      b.eaten = 0; b.raidDelay = 0;
       continue;
     }
     if (d > BEAR_ATTACK_RANGE) {

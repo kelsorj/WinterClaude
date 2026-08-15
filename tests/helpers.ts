@@ -33,7 +33,7 @@ export const aSeam = (over: Partial<GoldSeam> = {}): GoldSeam =>
 
 export const aBear = (over: Partial<Bear> = {}): Bear =>
   ({ id: 'b1', zone: 'start', pos: v(1, 0), home: v(1, 0), hp: 6, maxHp: 6,
-     state: 'sleep', respawn: 0, attackCd: 0, eaten: 0, ...over });
+     state: 'sleep', respawn: 0, attackCd: 0, eaten: 0, raidDelay: 0, ...over });
 
 export const aStation = (over: Partial<SellStation> = {}): SellStation =>
   ({ id: 's1', resource: 'wood', pos: v(0, 1), matPos: v(2, 1), matCash: 0, timer: 0,

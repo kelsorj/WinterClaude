@@ -640,13 +640,17 @@ export const PLAZA_RADIUS = COMPOUND_RADIUS + 1.2;
  * and the benches are all on the southern arc. Four towers all clustered north covered the depot
  * and left a bear eating out of the meat stand untouchable.
  *
- * The range is deliberately larger than the hunting turrets' 10. A tower on the ring is
- * `COMPOUND_RADIUS` from the fort, and a station that cannot reach the depot cannot defend the
- * one thing raiders actually come for; 17 covers the whole compound plus the feeding range around
- * its far side, so a raider is under fire wherever in the camp it settles down to eat.
+ * The range is deliberately larger than the hunting turrets' 10, and just as deliberately not
+ * much larger. A tower on the ring is `COMPOUND_RADIUS` from the fort, so anything under 13
+ * cannot reach the depot — the one thing raiders actually come for — and a station that cannot
+ * defend the depot is not a defence. Beyond that the number is what sets how much of the walk in
+ * a raider spends under fire, and it was measured against the raid economics rather than guessed:
+ * at 15, two stations hold ring 0 outright, leak ~9 meat a minute by ring 4 and ~14 by ring 8,
+ * and all four hold every ring tested. At 17 two stations held everything and the second pair was
+ * decoration; at 14 they leaked 15/min at ring 4, which reads as the towers not working.
  */
 const ARROW_BEARINGS = [70, 110, 245, 295];
-const ARROW_RANGE = 17;
+const ARROW_RANGE = 15;
 /** How far from its tower an arrow station's pad stands, so the two never overlap. */
 const ARROW_PAD_OFF = 3.5;
 

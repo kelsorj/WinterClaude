@@ -75,6 +75,39 @@ export const BEAR_ATTACK_CD = 1.0;
 export const BEAR_KNOCKBACK = 10;
 export const BEAR_LEASH = 14;
 
+/**
+ * Bear raids (Amendment 6B). Bears want the meat, so the camp's stockpile is a standing
+ * invitation: every so often one wilderness bear near the camp wakes up and walks in for it.
+ *
+ * `RAID_INTERVAL` is the cadence at ring 0 — one raider every forty seconds, which at
+ * `RAID_SATIETY` 5 and `RAID_FEED_RATE` 1/s costs an undefended camp about 7 meat a minute
+ * against the several hundred a working meat pipeline turns over. It is meant to be a tax and a
+ * reason to buy arrow stations, never a threat to the run: there is no lose state and the worst
+ * outcome is eaten meat.
+ *
+ * The cadence quickens with the world (more wilderness, more bears) but only mildly, and never
+ * past `RAID_INTERVAL_MIN`: a camp fifteen expeditions deep would otherwise be under permanent
+ * siege by arithmetic rather than by design.
+ *
+ * `RAID_RECRUIT_RADIUS` is how far out a raider can be drawn from. It reaches well past the
+ * starter map into the wilderness packs, so raids keep coming once the near bears are dead or
+ * sated, but not so far that a bear spends five minutes walking in from the edge of the world.
+ */
+export const RAID_INTERVAL = 40;
+export const RAID_INTERVAL_MIN = 15;
+export const RAID_INTERVAL_PER_RING = 0.12;
+export const RAID_RECRUIT_RADIUS = 80;
+export const RAID_SATIETY = 5;
+export const RAID_FEED_RATE = 1;
+/** Raiders lumber in at two thirds pace; a bear that has seen the player still charges at BEAR_SPEED. */
+export const RAID_SPEED = BEAR_SPEED * 0.66;
+/** How close a raider must get to the depot or a bench before it starts eating. */
+export const RAID_FEED_RANGE = 2.4;
+/** A raider this close to the player turns on them, interrupting a meal. */
+export const RAID_AGGRO_RANGE = 3.6;
+/** How close to its home a sated raider must get before it settles back down to sleep. */
+export const RAID_HOME_RANGE = 1.5;
+
 export const TURRET_DMG = 2;
 export const TURRET_PERIOD = 1.2;
 export const SAWMILL_PERIOD = 4;

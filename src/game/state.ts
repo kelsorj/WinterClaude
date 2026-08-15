@@ -24,10 +24,19 @@ export interface Player {
 export interface Tree { id: string; zone: ZoneId; pos: Vec2; hp: number; respawn: number }
 export interface GoldSeam { id: string; zone: ZoneId; pos: Vec2; hp: number; respawn: number }
 
-export type BearState = 'sleep' | 'aggro' | 'dead';
+/**
+ * 'raiding' and 'feeding' are the camp raid (Amendment 6B): a raider walks in for the meat,
+ * feeds where it finds it, and once sated walks home and goes back to sleep. Both are transient —
+ * bears are never serialized (they are rebuilt from the map and the ring replay), so a save taken
+ * mid-raid restores every bear asleep at home. That is an accepted loss: the meat already eaten
+ * stays eaten, and the raid simply starts again on the next timer.
+ */
+export type BearState = 'sleep' | 'aggro' | 'dead' | 'raiding' | 'feeding';
 export interface Bear {
   id: string; zone: ZoneId; pos: Vec2; home: Vec2;
   hp: number; maxHp: number; state: BearState; respawn: number; attackCd: number;
+  /** Meat eaten on the current raid. Killing a raider drops this on top of the usual yield. */
+  eaten: number;
 }
 
 export interface Drop { id: string; kind: Currency; amount: number; pos: Vec2 }
@@ -80,7 +89,15 @@ export interface Pad {
   repeat?: boolean;
 }
 
-export interface Turret { id: string; pos: Vec2; range: number; cd: number; active: boolean; output: number }
+export interface Turret {
+  id: string; pos: Vec2; range: number; cd: number; active: boolean; output: number;
+  /**
+   * Arrow stations on the compound perimeter (Amendment 6B) drop their kills where the bear
+   * fell instead of banking them: they defend the camp rather than farming it, and they have no
+   * rail or cart to carry an output pile away. The hunting turrets out east leave this unset.
+   */
+  dropsOnGround?: boolean;
+}
 export interface Sawmill { id: string; pos: Vec2; radius: number; timer: number; active: boolean; output: number }
 
 export interface Rail { id: string; points: Vec2[]; sourceType: 'turret' | 'sawmill'; sourceId: string }
@@ -140,6 +157,11 @@ export interface GameState {
   /** Whether the fort's hand-off crew has been hired; derived from the distributor pad on load. */
   distributorActive: boolean;
   zonesOpen: Record<ZoneId, boolean>;
+  /**
+   * Seconds since the last ambient raid was triggered (Amendment 6B). Transient — never saved,
+   * so a reloaded camp gets a full interval's grace before the next bear comes calling.
+   */
+  raidTimer: number;
   /**
    * How many expedition rings have been bought (Amendment 5B). This one number is the whole of
    * the world's size: `worldBounds(expansions)` is the walkable rect, and each ring's content is

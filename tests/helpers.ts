@@ -15,6 +15,7 @@ export function blankState(): GameState {
     pads: [], stations: [], customers: [], turrets: [], sawmills: [], rails: [], carts: [],
     depot: { wood: 0, meat: 0, gold: 0 }, depotPos: v(18, 0), depotTimer: 0,
     villagers: [],
+    raidTimer: 0,
     campTier: 0,
     distributorActive: false,
     zonesOpen: { start: true, deepforest: false, hunting: false, quarry: false },
@@ -32,7 +33,7 @@ export const aSeam = (over: Partial<GoldSeam> = {}): GoldSeam =>
 
 export const aBear = (over: Partial<Bear> = {}): Bear =>
   ({ id: 'b1', zone: 'start', pos: v(1, 0), home: v(1, 0), hp: 6, maxHp: 6,
-     state: 'sleep', respawn: 0, attackCd: 0, ...over });
+     state: 'sleep', respawn: 0, attackCd: 0, eaten: 0, ...over });
 
 export const aStation = (over: Partial<SellStation> = {}): SellStation =>
   ({ id: 's1', resource: 'wood', pos: v(0, 1), matPos: v(2, 1), matCash: 0, timer: 0,

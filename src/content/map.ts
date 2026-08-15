@@ -594,6 +594,11 @@ export function compoundGaps(): FenceGap[] {
       for (const p of ringCrossings(rail.points[i - 1], rail.points[i])) gaps.push({ pos: p, half: 1.8 });
     }
   }
+  // The arrow stations stand ON the ring (Amendment 6B), so the fence opens around each tower's
+  // base and the palisade reads as running into it — the reference frame's turrets on the wall.
+  for (const t of turretDefs()) {
+    if (t.dropsOnGround) gaps.push({ pos: t.pos, half: 1.6 });
+  }
   return gaps;
 }
 
@@ -626,10 +631,51 @@ export function compoundFencePosts(): { pos: Vec2; angle: number }[] {
  */
 export const PLAZA_RADIUS = COMPOUND_RADIUS + 1.2;
 
+/**
+ * The compound's arrow stations (Amendment 6B), standing on the fence line itself at bearings
+ * that fall in the ring's fenced arcs rather than in its gates: two on the short southern runs
+ * between the shopper gates, two along the long northern run.
+ *
+ * Both southern stations are there for a reason — a raider's second course is the meat bench,
+ * and the benches are all on the southern arc. Four towers all clustered north covered the depot
+ * and left a bear eating out of the meat stand untouchable.
+ *
+ * The range is deliberately larger than the hunting turrets' 10. A tower on the ring is
+ * `COMPOUND_RADIUS` from the fort, and a station that cannot reach the depot cannot defend the
+ * one thing raiders actually come for; 17 covers the whole compound plus the feeding range around
+ * its far side, so a raider is under fire wherever in the camp it settles down to eat.
+ */
+const ARROW_BEARINGS = [70, 110, 245, 295];
+const ARROW_RANGE = 17;
+/** How far from its tower an arrow station's pad stands, so the two never overlap. */
+const ARROW_PAD_OFF = 3.5;
+
+/**
+ * Where the pad that arms arrow station `index` stands. The southern pair sits INSIDE the ring,
+ * in the clear bays between the stands, because outside it is queue: the shopper columns run out
+ * from that arc and a pad among them is a pad being walked over. The northern pair sits outside,
+ * on the open snow its towers look out over.
+ */
+export function arrowPadPos(index: number): Vec2 {
+  const inward = index < 2;
+  return onArc(ARROW_BEARINGS[index], COMPOUND_RADIUS + (inward ? -ARROW_PAD_OFF : ARROW_PAD_OFF));
+}
+
 export function turretDefs(): Turret[] {
+  const arrows: Turret[] = ARROW_BEARINGS.map((deg, i) => ({
+    id: `arrow${i + 1}`,
+    pos: onArc(deg, COMPOUND_RADIUS),
+    range: ARROW_RANGE,
+    cd: 0,
+    active: false,
+    output: 0,
+    // No rail, no cart, no output pile: an arrow station drops what it kills where it falls.
+    dropsOnGround: true,
+  }));
   return [
     { id: 'turret1', pos: v(36, -9), range: 10, cd: 0, active: false, output: 0 },
     { id: 'turret2', pos: v(36, 9), range: 10, cd: 0, active: false, output: 0 },
+    ...arrows,
   ];
 }
 
@@ -667,21 +713,29 @@ export function padDefs(): Pad[] {
     p('p-carry1',     v(-10, -4),  'cash', 30, { type: 'carry', add: 12 }, 'p-axe'),
     p('p-speed1',     v(-16, -4),  'cash', 40, { type: 'speed', mult: 1.3 }, 'p-axe'),
     p('p-gate-deep',  v(21.5, -6.5), 'wood', 15, { type: 'gate', zone: 'deepforest' }, 'p-axe'),
-    p('p-camp2',      v(11, -9.5), 'wood', 40, { type: 'camp', tier: 2 }, 'p-gate-deep'),
+    p('p-camp2',      v(15.5, -10.5), 'wood', 40, { type: 'camp', tier: 2 }, 'p-gate-deep'),
     p('p-turret1',    v(31, -8),   'cash', 25, { type: 'machine', machineId: 'turret1' }, 'p-camp2'),
     p('p-sawmill1',   v(34, -16),  'cash', 30, { type: 'machine', machineId: 'sawmill1' }, 'p-camp2'),
     p('p-scythe',     v(4, -4),    'cash', 40, { type: 'tool', tool: 'scythe' }, 'p-turret1'),
     p('p-camp3',      v(15, -6),   'wood', 90, { type: 'camp', tier: 3 }, 'p-scythe'),
-    p('p-gate-hunt',  v(28.5, 2), 'meat', 20, { type: 'gate', zone: 'hunting' }, 'p-camp3'),
+    p('p-gate-hunt',  v(28.5, 1), 'meat', 20, { type: 'gate', zone: 'hunting' }, 'p-camp3'),
     p('p-turret2',    v(31, 8),    'cash', 50, { type: 'machine', machineId: 'turret2' }, 'p-gate-hunt'),
     // Sits off the fort's south-east corner, clear of the camp footprint, the rail gates and the
     // road fence, so the player walks past it on the way in from the benches.
-    p('p-distributor', v(21.3, 10.5), 'cash', 100, { type: 'distributor' }, 'p-camp3'),
+    p('p-distributor', v(25, -8), 'cash', 100, { type: 'distributor' }, 'p-camp3'),
+    // The camp's defence (Amendment 6B). Each pad stands a couple of units in from the tower it
+    // arms, so buying one is done from inside the compound looking out. The first pair comes with
+    // the Stockade and the second with the Fort: a camp with meat worth raiding is exactly a camp
+    // that has built something to keep it in.
+    p('p-arrow1', arrowPadPos(0), 'cash', 60, { type: 'machine', machineId: 'arrow1' }, 'p-camp2'),
+    p('p-arrow2', arrowPadPos(1), 'cash', 60, { type: 'machine', machineId: 'arrow2' }, 'p-camp2'),
+    p('p-arrow3', arrowPadPos(2), 'cash', 90, { type: 'machine', machineId: 'arrow3' }, 'p-camp3'),
+    p('p-arrow4', arrowPadPos(3), 'cash', 90, { type: 'machine', machineId: 'arrow4' }, 'p-camp3'),
     p('p-gate-quarry', v(-24, -5), 'cash', 60, { type: 'gate', zone: 'quarry' }, 'p-sawmill1'),
     p('p-pickaxe',    v(-31, -8),  'cash', 30, { type: 'pickaxe' }, 'p-gate-quarry'),
     p('p-carry2',     v(-10, 4),   'gold', 8,  { type: 'carry', add: 24 }, 'p-pickaxe'),
     p('p-speed2',     v(-16, 4),   'gold', 10, { type: 'speed', mult: 1.3 }, 'p-pickaxe'),
-    p('p-camp4',      v(13, 10.5), 'gold', 12, { type: 'camp', tier: 4 }, 'p-pickaxe'),
+    p('p-camp4',      v(27.5, -11.5), 'gold', 12, { type: 'camp', tier: 4 }, 'p-pickaxe'),
     // The one repeatable pad (Amendment 5B). It mirrors the distributor across the road, off the
     // fort's south-west corner: outside `CAMP_FOOTPRINT`, south of the shoppers' corridor (which
     // threads z ∈ [-6.75, -4.55] on its way to the gold bench), and inside the south fence's

@@ -22,7 +22,7 @@ export function createInitialState(): GameState {
     seams: seamDefs().map((d, i) => ({ id: `seam${i}`, zone: d.zone, pos: d.pos, hp: SEAM_HP, respawn: 0 })),
     bears: bearDefs().map((d, i) => ({
       id: `bear${i}`, zone: d.zone, pos: v(d.pos.x, d.pos.z), home: v(d.pos.x, d.pos.z),
-      hp: BEAR_HP, maxHp: BEAR_HP, state: 'sleep' as const, respawn: 0, attackCd: 0,
+      hp: BEAR_HP, maxHp: BEAR_HP, state: 'sleep' as const, respawn: 0, attackCd: 0, eaten: 0,
     })),
     drops: [],
     pads: padDefs(),
@@ -56,6 +56,7 @@ export function createInitialState(): GameState {
     campTier: 0,
     distributorActive: false,
     zonesOpen: { start: true, deepforest: false, hunting: false, quarry: false },
+    raidTimer: 0,
     expansions: 0,
     stats: { chops: 0, bearsKilled: 0, earned: 0 },
     events: [],

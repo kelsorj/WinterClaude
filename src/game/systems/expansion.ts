@@ -36,7 +36,7 @@ export function applyExpansion(state: GameState, ring: number): void {
     const d = defs.bears[i];
     state.bears.push({
       id: `ring${ring}-bear${i}`, zone: d.zone, pos: v(d.pos.x, d.pos.z), home: v(d.pos.x, d.pos.z),
-      hp: BEAR_HP, maxHp: BEAR_HP, state: 'sleep', respawn: 0, attackCd: 0,
+      hp: BEAR_HP, maxHp: BEAR_HP, state: 'sleep', respawn: 0, attackCd: 0, eaten: 0,
     });
   }
   for (let i = 0; i < defs.seams.length; i++) {

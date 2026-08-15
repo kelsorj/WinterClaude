@@ -10,13 +10,26 @@ export function machinesTick(state: GameState, dt: number): void {
     if (t.cd > 0) continue;
     const inRange = state.bears
       .filter((b) => b.state !== 'dead' && state.zonesOpen[b.zone] && dist(b.pos, t.pos) <= t.range)
+      // An arrow station shoots what is coming for the camp — a raider walking in, one feeding,
+      // one the player has pulled — and lets sleeping bears sleep. The hunting turrets out east
+      // are the ones that farm, and they have the rails to carry it home.
+      //
+      // Without this the compound's south-east tower reaches into the hunting ground and shoots
+      // its bears on their respawn timer forever: 17 units of range past a wall of sleeping meat
+      // turned four defence pads into the best meat mine in the game (measured: 284 meat in ten
+      // minutes, against the 70 an undefended camp loses).
+      .filter((b) => !t.dropsOnGround || b.state !== 'sleep')
       .sort((a, b) => dist(a.pos, t.pos) - dist(b.pos, t.pos));
     const target = inRange[0];
     if (!target) { t.cd = 0; continue; }
     t.cd = TURRET_PERIOD;
     target.hp -= TURRET_DMG;
     state.events.push({ type: 'bearHit', pos: v(target.pos.x, target.pos.z) });
-    if (target.hp <= 0) killBear(state, target, { kind: 'turret', turret: t });
+    // An arrow station has no rail and no output pile: its kills fall where the bear did, for
+    // the player (or a hauler passing) to pick up (Amendment 6B).
+    if (target.hp <= 0) {
+      killBear(state, target, t.dropsOnGround ? { kind: 'ground' } : { kind: 'turret', turret: t });
+    }
   }
 
   for (const s of state.sawmills) {

@@ -14,8 +14,9 @@ describe('createInitialState', () => {
     // The 10× world (Amendment 3B): a wilderness ring on top of the original map's stands.
     expect(state.trees.length).toBeGreaterThanOrEqual(2400); // finite forest: no respawns
     expect(state.trees.length).toBeLessThanOrEqual(3500);    // and an instanced-draw budget
-    // Eighteen one-shot campaign unlocks plus the repeatable expedition (Amendment 5B).
-    expect(state.pads.length).toBe(19);
+    // Eighteen one-shot campaign unlocks, four arrow stations (Amendment 6B), plus the
+    // repeatable expedition (Amendment 5B).
+    expect(state.pads.length).toBe(23);
     expect(state.pads.filter((p) => p.repeat)).toHaveLength(1);
     expect(state.expansions).toBe(0);
     expect(state.bears.length).toBeGreaterThanOrEqual(55);
@@ -26,7 +27,9 @@ describe('createInitialState', () => {
     expect(state.villagers.filter((v) => v.kind === 'miner').length).toBe(2);
     expect(state.villagers).toHaveLength(7);
     expect(state.stations.map((s) => s.resource).sort()).toEqual(['gold', 'meat', 'wood']);
-    expect(state.turrets.length).toBe(2);
+    // Two hunting turrets out east, four arrow stations on the compound's fence line.
+    expect(state.turrets.length).toBe(6);
+    expect(state.turrets.filter((t) => t.dropsOnGround)).toHaveLength(4);
     expect(state.sawmills.length).toBe(1);
     expect(state.rails.length).toBe(3);
     expect(state.carts.length).toBe(3);
@@ -60,7 +63,9 @@ describe('createInitialState', () => {
     const padMachineIds = state.pads
       .map((p) => (p.effect.type === 'machine' ? p.effect.machineId : null))
       .filter((x): x is string => x !== null);
-    expect(padMachineIds.sort()).toEqual(['sawmill1', 'turret1', 'turret2']);
+    expect(padMachineIds.sort()).toEqual([
+      'arrow1', 'arrow2', 'arrow3', 'arrow4', 'sawmill1', 'turret1', 'turret2',
+    ]);
   });
 
   it('starts the fort crew idle inside the camp', () => {

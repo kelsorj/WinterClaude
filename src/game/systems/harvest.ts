@@ -88,8 +88,13 @@ function hit(state: GameState, target: Target, chopDmg: number, atkDmg: number):
 }
 
 /**
- * Kill a bear. `to` is either 'ground' (meat drops at the corpse, for player kills) or a
- * turret reference (meat goes straight to that turret's output pile, for turret kills).
+ * Kill a bear. `to` is either 'ground' (meat drops at the corpse, for player kills and for the
+ * compound's arrow stations) or a turret reference (meat goes straight to that turret's output
+ * pile, for the hunting turrets that have a cart to carry it home).
+ *
+ * A raider carries what it has already swallowed (Amendment 6B), so killing one mid-meal gets the
+ * stolen meat back on top of the usual yield — the reason a defended camp loses less than an
+ * undefended one even though both are being eaten from.
  */
 export function killBear(
   state: GameState, b: Bear, to: { kind: 'ground' } | { kind: 'turret'; turret: Turret },
@@ -97,6 +102,8 @@ export function killBear(
   b.state = 'dead';
   b.respawn = BEAR_RESPAWN;
   state.stats.bearsKilled++;
-  if (to.kind === 'ground') spawnDrops(state, 'meat', BEAR_MEAT, b.pos);
-  else to.turret.output += BEAR_MEAT;
+  const yieldMeat = BEAR_MEAT + Math.floor(b.eaten);
+  b.eaten = 0;
+  if (to.kind === 'ground') spawnDrops(state, 'meat', yieldMeat, b.pos);
+  else to.turret.output += yieldMeat;
 }

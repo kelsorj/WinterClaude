@@ -604,12 +604,24 @@ export class Renderer {
     }
     for (const bear of state.bears) {
       const m = this.ensure(bear.id, () => setShadow(makeBear(), true));
+      const last = (m.userData.last ??= { x: bear.pos.x, z: bear.pos.z }) as Vec2;
       m.position.set(bear.pos.x, 0, bear.pos.z);
       m.visible = state.zonesOpen[bear.zone] && bear.state !== 'dead';
       if (bear.state === 'aggro') {
         m.rotation.y = Math.atan2(state.player.pos.x - bear.pos.x, state.player.pos.z - bear.pos.z);
         m.position.y = Math.abs(Math.sin(this.t * 10)) * 0.15;
+      } else if (bear.state === 'raiding' || bear.state === 'feeding') {
+        // A raider is walking or eating, not sleeping: face where it is actually going (derived
+        // from the step it just took, since the goal lives in the simulation, not here) and
+        // lumber. A feeding bear stands still, so its nod comes from the clock instead.
+        const dx = bear.pos.x - last.x, dz = bear.pos.z - last.z;
+        if (Math.hypot(dx, dz) > 1e-4) m.rotation.y = Math.atan2(dx, dz);
+        m.position.y = bear.state === 'feeding'
+          ? Math.abs(Math.sin(this.t * 3.5)) * 0.07
+          : Math.abs(Math.sin(this.t * 6)) * 0.1;
       }
+      last.x = bear.pos.x;
+      last.z = bear.pos.z;
       const refs = refsOf<BearRefs>(m);
       // Sleeping bears breathe. Purely cosmetic: the pulse never touches game state.
       const breath = bear.state === 'sleep'
@@ -674,6 +686,9 @@ export class Renderer {
       const m = this.meshes.get(turret.id);
       if (!m) continue;
       m.visible = turret.active;
+      // An arrow station banks nothing — its kills fall where the bear did — so it gets no output
+      // pile at all rather than an eighteen-box stack that is permanently hidden.
+      if (turret.dropsOnGround) continue;
       this.syncPile(
         `out-${turret.id}`, turret.pos.x + 1.4, turret.pos.z + 1.4, turret.output, COLORS.meat, 3, 18,
       );

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CAMP_FOOTPRINT, COMPOUND_RADIUS, DEPOT_POS, PLAZA_RADIUS, ZONE_RECTS, arrivalPath,
   compoundFencePosts, compoundGaps, departurePath, padDefs, queueAnchor, queueLaneX, railDefs,
-  stationDefs, stationRoadEnd,
+  stationDefs, stationRoadEnd, turretDefs,
 } from '../src/content/map';
 import { CUSTOMER_QUEUE_CAP, PAD_RANGE } from '../src/content/balance';
 import { dist, inRect, v } from '../src/game/math';
@@ -145,6 +145,26 @@ describe('camp compound layout', () => {
         }
       }
     }
+  });
+
+  it('stands its arrow towers on the fence line, out of the gates and off the queues', () => {
+    const arrows = turretDefs().filter((t) => t.dropsOnGround);
+    expect(arrows).toHaveLength(4);
+    const posts = compoundFencePosts();
+    for (const t of arrows) {
+      // On the ring itself, in a stretch the fence actually runs along (its own gap aside).
+      expect(dist(t.pos, DEPOT_POS)).toBeCloseTo(COMPOUND_RADIUS, 6);
+      const nearestPost = Math.min(...posts.map((p) => dist(p.pos, t.pos)));
+      expect(nearestPost).toBeLessThan(3.5);
+      // Clear of everything a walker occupies: a tower base is 0.9 across, a walker 0.4.
+      for (const st of stations) {
+        for (const spot of queueSpots(st)) expect(dist(t.pos, spot)).toBeGreaterThan(1.3);
+        expect(dist(t.pos, st.pos)).toBeGreaterThan(2.0);
+      }
+    }
+    // North and south, so the depot and the meat bench are both under cover.
+    expect(arrows.filter((t) => t.pos.z > DEPOT_POS.z).length).toBeGreaterThanOrEqual(2);
+    expect(arrows.filter((t) => t.pos.z < DEPOT_POS.z).length).toBeGreaterThanOrEqual(2);
   });
 
   it('keeps every pad clear of the stands, their mats and their queues', () => {

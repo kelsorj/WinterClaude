@@ -327,3 +327,32 @@ rescue balance constants are removed.
 ### D. Visible mute
 A small always-visible speaker toggle (drawn icon, both states) joins the
 sidebar, synced with the M key and the pause-menu button.
+
+---
+
+## Amendment 5 — No ending; the ever-expanding world (2026-08-15, user-directed)
+
+### A. No end state
+The win condition and "Camp Complete" overlay are removed entirely: no `won`
+flag, no win event, no completion screen. The game is an infinite sandbox.
+Lifetime stats remain tracked (shown in the pause menu instead of a win
+screen).
+
+### B. Expedition expansions
+A repeatable **Expedition pad** near the fort keeps the world growing forever:
+
+- Cost: cash, escalating per purchase (`EXPEDITION_BASE 200 × 1.6^n`,
+  data-driven). After each completion the pad re-arms at the next price.
+- Each purchase expands `WORLD_BOUNDS` outward by a ring (~+30 units per
+  side) and procedurally seeds the new ring with wilderness content —
+  trees at wilderness density, a few bear packs, a few gold seams — from a
+  seeded RNG keyed by ring index, so generation is deterministic.
+- Saves persist the expansion count (+ felled trees as today); loading
+  replays ring generation deterministically, then applies felled state.
+- Renderer: instanced forest grows with each ring (instanced meshes rebuilt
+  or extended on expansion); ground plane, fog and snowfall adapt. Per-ring
+  entity counts are capped so per-mesh populations (bears, seams) grow
+  modestly while the instanced forest carries the scale.
+
+This makes pads a mix of one-shot unlocks (the existing 18) and the
+repeatable expedition, and gives late-game cash an unbounded purpose.

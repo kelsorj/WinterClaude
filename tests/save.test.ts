@@ -72,6 +72,30 @@ describe('save round-trip', () => {
     expect(restored.stations[0].matCash).toBe(44);
   });
 
+  it('keeps felled trees felled and standing trees standing', () => {
+    const state = createInitialState();
+    const cut = [state.trees[0], state.trees[5], state.trees[200]];
+    for (const tree of cut) { tree.respawn = 1; tree.hp = 0; }
+
+    const restored = deserialize(serialize(state));
+
+    const felled = restored.trees.filter((t) => t.respawn > 0);
+    expect(felled.map((t) => t.id).sort()).toEqual(cut.map((t) => t.id).sort());
+    expect(felled.every((t) => t.hp === 0)).toBe(true);
+    expect(restored.trees.length - felled.length).toBe(state.trees.length - cut.length);
+  });
+
+  it('loads pre-forest saves with a full forest', () => {
+    const state = createInitialState();
+    state.trees[0].respawn = 1;
+    const legacy = JSON.parse(serialize(state)) as Record<string, unknown>;
+    delete legacy.felledTrees;
+
+    const restored = deserialize(JSON.stringify(legacy));
+
+    expect(restored.trees.every((t) => t.respawn === 0)).toBe(true);
+  });
+
   it('drops in-transit cart cargo on reload (accepted loss)', () => {
     const state = createInitialState();
     state.carts[0].load = 5;

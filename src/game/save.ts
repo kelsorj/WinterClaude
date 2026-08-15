@@ -1,4 +1,5 @@
 import { createInitialState } from './init';
+import { FELLED } from './systems/harvest';
 import { activateMachine } from './systems/pads';
 import type { GameState, ZoneId } from './state';
 
@@ -12,6 +13,8 @@ interface SaveData {
   padsPaid: Record<string, number>;
   zonesOpen: Partial<Record<ZoneId, boolean>>;
   thawed: string[];
+  /** Ids of permanently felled trees — deforestation is progress and must persist (Amendment 1A). */
+  felledTrees: string[];
   depot: GameState['depot'];
   machineOutputs: Record<string, number>;
   matCash: Record<string, number>;
@@ -27,6 +30,7 @@ export function serialize(state: GameState): string {
     padsPaid: Object.fromEntries(state.pads.filter((p) => !p.done && p.paid > 0).map((p) => [p.id, p.paid])),
     zonesOpen: state.zonesOpen,
     thawed: state.villagers.filter((v) => v.state !== 'frozen').map((v) => v.id),
+    felledTrees: state.trees.filter((t) => t.respawn > 0).map((t) => t.id),
     depot: state.depot,
     machineOutputs: Object.fromEntries([
       ...state.turrets.map((t) => [t.id, t.output]),
@@ -67,6 +71,12 @@ export function deserialize(json: string): GameState {
     if (!pad.done) continue;
     if (pad.effect.type === 'machine') activateMachine(state, pad.effect.machineId);
     if (pad.effect.type === 'camp') state.campTier = Math.max(state.campTier, pad.effect.tier);
+  }
+  // Saves written before the finite forest landed have no felled list; they load with a full
+  // forest rather than failing, which only costs the player some already-cut trees.
+  const felled = new Set(Array.isArray(data.felledTrees) ? data.felledTrees : []);
+  for (const tree of state.trees) {
+    if (felled.has(tree.id)) { tree.respawn = FELLED; tree.hp = 0; }
   }
   for (const vil of state.villagers) {
     if (data.thawed.includes(vil.id)) {

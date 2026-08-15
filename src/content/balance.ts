@@ -28,7 +28,12 @@ export const SEAM_YIELD = 1;
 export const SEAM_RESPAWN = 25;
 
 export const BEAR_HP = 6;
-export const BEAR_MEAT = 3;
+/**
+ * Spec allows 2–4. Sits at the top of the range because thawing all 40 villagers costs 160 meat
+ * that only the player's own kills can supply: at 3 that is 54 bear kills against a 30 s respawn,
+ * which measured as an 11-minute endgame with nothing left to unlock. At 4 it is 40 kills.
+ */
+export const BEAR_MEAT = 4;
 export const BEAR_RESPAWN = 30;
 export const BEAR_SPEED = 3.4;
 export const BEAR_ATTACK_RANGE = 1.4;

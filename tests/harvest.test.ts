@@ -57,7 +57,7 @@ describe('harvestTick', () => {
     expect(state.bears[0].state).toBe('aggro');
     ticks(state, 4);
     expect(state.bears[0].state).toBe('dead');
-    expect(state.drops.filter((d) => d.kind === 'meat')).toHaveLength(3); // BEAR_MEAT
+    expect(state.drops.filter((d) => d.kind === 'meat')).toHaveLength(4); // BEAR_MEAT
     expect(state.stats.bearsKilled).toBe(1);
   });
 
@@ -88,7 +88,7 @@ describe('harvestTick', () => {
     const bear = aBear();
     state.bears.push(bear);
     killBear(state, bear, { kind: 'turret', turret });
-    expect(turret.output).toBe(3);
+    expect(turret.output).toBe(4); // BEAR_MEAT
     expect(state.drops).toHaveLength(0);
     expect(bear.state).toBe('dead');
   });

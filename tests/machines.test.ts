@@ -20,7 +20,7 @@ describe('turrets', () => {
     state.bears.push(aBear({ pos: v(3, 0) })); // hp 6, turret dmg 2 @ 1.2s
     ticks(state, 4);
     expect(state.bears[0].state).toBe('dead');
-    expect(state.turrets[0].output).toBe(3); // BEAR_MEAT
+    expect(state.turrets[0].output).toBe(4); // BEAR_MEAT
     expect(state.stats.bearsKilled).toBe(1);
   });
 

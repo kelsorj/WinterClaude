@@ -1,34 +1,65 @@
 import * as THREE from 'three';
 import { TOOLS } from '../content/balance';
 import { WORLD_BOUNDS, ZONE_RECTS } from '../content/map';
-import { cartPos } from '../game/systems/carts';
+import { cartPos, railActive } from '../game/systems/carts';
 import { padAvailable } from '../game/systems/pads';
 import type { Rect } from '../game/math';
-import type { GameEvent, GameState, ZoneId } from '../game/state';
+import type { GameEvent, GameState, GateZone } from '../game/state';
+import type {
+  BearRefs, CartRefs, PadRefs, PlayerRefs, SawmillRefs, TreeRefs, VillagerRefs,
+} from './meshes';
 import {
-  COLORS, ICONS, makeBear, makeBench, makeCarryBox, makeCart, makeDepot, makeDropMesh,
-  makeGateWall, makeLabel, makeMatMesh, makePadMesh, makePlayer, makeRailMesh, makeSawmill,
-  makeSeam, makeTool, makeTree, makeTurret, makeVillager,
+  COLORS, ICONS, SHARED, makeBear, makeBench, makeCarryBox, makeCart, makeDepot, makeDropMesh,
+  makeGateWall, makeLabel, makeMatMesh, makePadMesh, makePile, makePlayer, makeRailMesh,
+  makeSawmill, makeSeam, makeTool, makeTree, makeTurret, makeVillager, refsOf,
 } from './meshes';
 
 const CAM_OFFSET = new THREE.Vector3(16, 20, 16);
-
-type GateZone = Exclude<ZoneId, 'start'>;
+const PILE_BOX_H = 0.14;
 
 interface FloatingText { sprite: THREE.Sprite; life: number }
+
+/**
+ * Release every GPU resource under `root` that this subtree owns. Module-level shared
+ * geometries/materials/textures (see `SHARED`) are skipped — they belong to the mesh library,
+ * not to any one mesh, and other live meshes are still drawing with them.
+ */
+function disposeSubtree(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    const withGeo = obj as Partial<THREE.Mesh>;
+    if (withGeo.geometry && !SHARED.has(withGeo.geometry)) withGeo.geometry.dispose();
+    const raw = (obj as Partial<THREE.Mesh>).material;
+    if (!raw) return;
+    for (const mat of Array.isArray(raw) ? raw : [raw]) {
+      if (SHARED.has(mat)) continue;
+      const map = (mat as THREE.SpriteMaterial).map;
+      if (map && !SHARED.has(map)) map.dispose();
+      mat.dispose();
+    }
+  });
+}
 
 export class Renderer {
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private webgl: THREE.WebGLRenderer;
   private meshes = new Map<string, THREE.Object3D>();
+  private dropMeshes = new Map<string, THREE.Object3D>();
   private gates = new Map<GateZone, THREE.Object3D>();
   private floats: FloatingText[] = [];
   private snow!: THREE.Points;
   private target = new THREE.Vector3();
+  private scratch = new THREE.Vector3();
   private t = 0;
+  private floatSeq = 0;
   private lastToolKey = '';
   private lastCarryKey = '';
+  private onResize = (): void => {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.webgl.setSize(window.innerWidth, window.innerHeight);
+    this.webgl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  };
 
   constructor(container: HTMLElement) {
     this.webgl = new THREE.WebGLRenderer({ antialias: true });
@@ -36,12 +67,14 @@ export class Renderer {
     this.webgl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(this.webgl.domElement);
     this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
-    window.addEventListener('resize', () => {
-      this.camera.aspect = window.innerWidth / window.innerHeight;
-      this.camera.updateProjectionMatrix();
-      this.webgl.setSize(window.innerWidth, window.innerHeight);
-    });
+    window.addEventListener('resize', this.onResize);
     this.buildWorld();
+  }
+
+  /** Detach from the window and release the WebGL context (page teardown / hot restart). */
+  dispose(): void {
+    window.removeEventListener('resize', this.onResize);
+    this.webgl.dispose();
   }
 
   private buildWorld(): void {
@@ -159,10 +192,15 @@ export class Renderer {
   /** Full teardown + rebuild (used by Restart). */
   rebuild(state: GameState): void {
     for (const f of this.floats) this.dropFloat(f);
-    while (this.scene.children.length > 0) this.scene.remove(this.scene.children[0]);
-    this.meshes.clear();
-    this.gates.clear();
     this.floats = [];
+    while (this.scene.children.length > 0) {
+      const child = this.scene.children[0];
+      this.scene.remove(child);
+      disposeSubtree(child);
+    }
+    this.meshes.clear();
+    this.dropMeshes.clear();
+    this.gates.clear();
     this.lastToolKey = '';
     this.lastCarryKey = '';
     this.buildWorld();
@@ -183,11 +221,18 @@ export class Renderer {
     this.t += dt;
     this.syncPlayer(state);
     for (const tree of state.trees) {
-      const m = this.ensure(tree.id, makeTree);
-      m.position.set(tree.pos.x, 0, tree.pos.z);
+      // Trees never move: place once, then freeze the matrix and only toggle visibility.
+      const m = this.ensure(tree.id, () => {
+        const g = makeTree();
+        g.position.set(tree.pos.x, 0, tree.pos.z);
+        g.updateMatrix();
+        g.matrixAutoUpdate = false;
+        return g;
+      });
       m.visible = state.zonesOpen[tree.zone];
-      m.getObjectByName('full')!.visible = tree.respawn === 0;
-      m.getObjectByName('stump')!.visible = tree.respawn > 0;
+      const refs = refsOf<TreeRefs>(m);
+      refs.full.visible = tree.respawn === 0;
+      refs.stump.visible = tree.respawn > 0;
     }
     for (const seam of state.seams) {
       const m = this.ensure(seam.id, makeSeam);
@@ -203,76 +248,77 @@ export class Renderer {
         m.rotation.y = Math.atan2(state.player.pos.x - bear.pos.x, state.player.pos.z - bear.pos.z);
         m.position.y = Math.abs(Math.sin(this.t * 10)) * 0.15;
       }
+      const refs = refsOf<BearRefs>(m);
+      // Keep the bars square to the camera no matter which way the bear turned.
+      refs.bars.rotation.y = Math.PI / 4 - m.rotation.y;
       const hurt = bear.hp < bear.maxHp && bear.state !== 'dead';
-      m.getObjectByName('hpbg')!.visible = hurt;
-      const bar = m.getObjectByName('hp')!;
-      bar.visible = hurt;
-      bar.scale.x = Math.max(bear.hp / bear.maxHp, 0.001);
+      refs.hpBg.visible = hurt;
+      refs.hp.visible = hurt;
+      refs.hp.scale.x = Math.max(bear.hp / bear.maxHp, 0.001);
     }
     const liveDrops = new Set<string>();
     for (const drop of state.drops) {
       liveDrops.add(drop.id);
-      const m = this.ensure(drop.id, () => makeDropMesh(drop.kind));
+      let m = this.dropMeshes.get(drop.id);
+      if (!m) {
+        m = makeDropMesh(drop.kind);
+        this.dropMeshes.set(drop.id, m);
+        this.scene.add(m);
+      }
       m.position.set(drop.pos.x, 0.3 + Math.sin(this.t * 4 + drop.pos.x) * 0.08, drop.pos.z);
       m.rotation.y += dt * 2;
     }
-    for (const [id, m] of this.meshes) {
-      if (id.startsWith('drop') && !liveDrops.has(id)) {
-        this.scene.remove(m);
-        this.meshes.delete(id);
-      }
+    for (const [id, m] of this.dropMeshes) {
+      if (liveDrops.has(id)) continue;
+      this.scene.remove(m);
+      this.dropMeshes.delete(id);
     }
     for (const pad of state.pads) {
-      const m = this.meshes.get(pad.id)!;
+      const m = this.meshes.get(pad.id);
+      if (!m) continue;
       m.visible = padAvailable(state, pad);
       const f = Math.max(pad.paid / pad.cost, 0.001);
-      m.getObjectByName('progress')!.scale.set(f, 1, f);
+      refsOf<PadRefs>(m).progress.scale.set(f, 1, f);
     }
     for (const st of state.stations) {
-      const pile = this.ensure(`cash-${st.id}`, () => {
-        const mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(1.0, 1, 1.0),
-          new THREE.MeshLambertMaterial({ color: COLORS.cash }),
-        );
-        return mesh;
-      });
-      pile.visible = st.matCash > 0;
-      const h = Math.min(0.15 + st.matCash * 0.015, 1.6);
-      pile.scale.y = h;
-      pile.position.set(st.matPos.x, h / 2, st.matPos.z);
+      this.syncPile(`cash-${st.id}`, st.matPos.x, st.matPos.z, st.matCash, COLORS.cash, 10, 12);
     }
     for (const turret of state.turrets) {
-      this.meshes.get(turret.id)!.visible = turret.active;
-      this.syncOutputPile(`out-${turret.id}`, turret.pos.x + 1.2, turret.pos.z + 1.2, turret.output, COLORS.meat);
+      const m = this.meshes.get(turret.id);
+      if (!m) continue;
+      m.visible = turret.active;
+      this.syncPile(
+        `out-${turret.id}`, turret.pos.x + 1.2, turret.pos.z + 1.2, turret.output, COLORS.meat, 3, 14,
+      );
     }
     for (const mill of state.sawmills) {
-      const m = this.meshes.get(mill.id)!;
+      const m = this.meshes.get(mill.id);
+      if (!m) continue;
       m.visible = mill.active;
-      if (mill.active) m.getObjectByName('blade')!.rotation.x += dt * 6;
-      this.syncOutputPile(`out-${mill.id}`, mill.pos.x + 1.4, mill.pos.z + 1.2, mill.output, COLORS.wood);
+      if (mill.active) refsOf<SawmillRefs>(m).blade.rotation.x += dt * 6;
+      this.syncPile(
+        `out-${mill.id}`, mill.pos.x + 1.4, mill.pos.z + 1.2, mill.output, COLORS.wood, 3, 14,
+      );
     }
     for (const rail of state.rails) {
-      const machineOn =
-        state.turrets.find((t) => t.id === rail.sourceId)?.active ??
-        state.sawmills.find((s) => s.id === rail.sourceId)?.active ?? false;
-      this.meshes.get(rail.id)!.visible = machineOn;
+      const m = this.meshes.get(rail.id);
+      if (!m) continue;
+      m.visible = railActive(state, rail);
     }
     for (const cart of state.carts) {
-      const rail = state.rails.find((r) => r.id === cart.railId)!;
-      const machineOn =
-        state.turrets.find((t) => t.id === rail.sourceId)?.active ??
-        state.sawmills.find((s) => s.id === rail.sourceId)?.active ?? false;
+      const rail = state.rails.find((r) => r.id === cart.railId);
+      if (!rail) continue;
       const m = this.ensure(cart.id, makeCart);
-      m.visible = machineOn;
+      m.visible = railActive(state, rail);
       const pos = cartPos(state, cart);
       m.position.set(pos.x, 0, pos.z);
-      const load = m.getObjectByName('load')!;
+      const load = refsOf<CartRefs>(m).load;
       load.visible = cart.load > 0;
       load.scale.y = Math.max(cart.load / cart.cap, 0.2);
     }
-    this.syncOutputPile('depot-wood', state.depotPos.x - 1.4, state.depotPos.z - 1.4, state.depot.wood, COLORS.wood);
-    this.syncOutputPile('depot-meat', state.depotPos.x, state.depotPos.z - 1.4, state.depot.meat, COLORS.meat);
-    this.syncOutputPile('depot-gold', state.depotPos.x + 1.4, state.depotPos.z - 1.4, state.depot.gold, COLORS.gold);
+    this.syncPile('depot-wood', state.depotPos.x - 1.4, state.depotPos.z - 1.4, state.depot.wood, COLORS.wood, 3, 14);
+    this.syncPile('depot-meat', state.depotPos.x, state.depotPos.z - 1.4, state.depot.meat, COLORS.meat, 3, 14);
+    this.syncPile('depot-gold', state.depotPos.x + 1.4, state.depotPos.z - 1.4, state.depot.gold, COLORS.gold, 3, 14);
     for (let i = 0; i < state.villagers.length; i++) {
       const vil = state.villagers[i];
       const m = this.ensure(vil.id, makeVillager);
@@ -283,22 +329,30 @@ export class Renderer {
       const jz = frozen ? 0 : (((i * 53) % 11) - 5) * 0.12;
       const bob = frozen ? 0 : Math.abs(Math.sin(this.t * 8 + i)) * 0.08;
       m.position.set(vil.pos.x + jx, bob, vil.pos.z + jz);
-      m.getObjectByName('ice')!.visible = frozen;
-      m.getObjectByName('load')!.visible = vil.carrying !== null;
+      const refs = refsOf<VillagerRefs>(m);
+      refs.ice.visible = frozen;
+      refs.load.visible = vil.carrying !== null;
     }
     for (const [zone, wall] of this.gates) wall.visible = !state.zonesOpen[zone];
     const p = state.player.pos;
-    this.target.lerp(new THREE.Vector3(p.x, 0, p.z), 1 - Math.exp(-5 * dt));
+    this.target.lerp(this.scratch.set(p.x, 0, p.z), 1 - Math.exp(-5 * dt));
     this.camera.position.copy(this.target).add(CAM_OFFSET);
     this.camera.lookAt(this.target);
   }
 
-  private syncOutputPile(id: string, x: number, z: number, count: number, color: number): void {
-    const m = this.ensure(id, () => new THREE.Mesh(
-      new THREE.BoxGeometry(1.0, 1, 1.0), new THREE.MeshLambertMaterial({ color }),
-    ));
+  /**
+   * One pile renderer for station cash, machine outputs and depot stockpiles: `unitsPerBox`
+   * resources make one box and the stack is capped at `cap` boxes so a runaway stockpile can
+   * never grow without bound.
+   */
+  private syncPile(
+    id: string, x: number, z: number, count: number, color: number, unitsPerBox: number, cap: number,
+  ): void {
+    const m = this.ensure(id, () => makePile(color));
     m.visible = count > 0;
-    const h = Math.min(0.15 + count * 0.05, 2.0);
+    if (count <= 0) return;
+    const boxes = Math.min(Math.ceil(count / unitsPerBox), cap);
+    const h = 0.06 + boxes * PILE_BOX_H;
     m.scale.y = h;
     m.position.set(x, h / 2, z);
   }
@@ -307,17 +361,18 @@ export class Renderer {
     const p = state.player;
     const m = this.ensure('player', makePlayer) as THREE.Group;
     m.position.set(p.pos.x, 0, p.pos.z);
-    const toolMount = m.getObjectByName('toolMount')!;
+    const refs = refsOf<PlayerRefs>(m);
     const toolKey = `${p.tool}|${p.hasPickaxe}`;
     if (toolKey !== this.lastToolKey) {
       this.lastToolKey = toolKey;
-      toolMount.clear();
-      toolMount.add(makeTool(p.tool));
+      for (const child of [...refs.toolMount.children]) disposeSubtree(child);
+      refs.toolMount.clear();
+      refs.toolMount.add(makeTool(p.tool));
       if (p.hasPickaxe) {
         const pick = makeTool('pickaxe');
         pick.position.set(-0.9, 0, -0.5);
         pick.rotation.z = 0.5;
-        toolMount.add(pick);
+        refs.toolMount.add(pick);
       }
     }
     const period = TOOLS[p.tool].period;
@@ -326,20 +381,19 @@ export class Renderer {
       m.rotation.y = Math.atan2(p.facing.x, p.facing.z) + swingFrac * Math.PI * 2;
     } else {
       m.rotation.y = Math.atan2(p.facing.x, p.facing.z);
-      toolMount.rotation.x = Math.sin(swingFrac * Math.PI) * 1.3;
+      refs.toolMount.rotation.x = Math.sin(swingFrac * Math.PI) * 1.3;
     }
     const carryKey = `${p.carry.wood}|${p.carry.meat}|${p.carry.gold}`;
     if (carryKey !== this.lastCarryKey) {
       this.lastCarryKey = carryKey;
-      const carry = m.getObjectByName('carry') as THREE.Group;
-      carry.clear();
+      refs.carry.clear();
       let y = 0;
       const add = (count: number, color: number) => {
         for (let i = 0; i < Math.ceil(count / 2); i++) {
           const box = makeCarryBox(color);
           box.position.y = y;
           y += 0.22;
-          carry.add(box);
+          refs.carry.add(box);
         }
       };
       add(p.carry.wood, COLORS.wood);
@@ -357,7 +411,10 @@ export class Renderer {
       if (text && 'pos' in e) {
         const sprite = makeLabel(text);
         sprite.scale.set(2.6, 1.3, 1);
-        sprite.position.set(e.pos.x, 2.5, e.pos.z);
+        // Concurrent floats from the same bench would overlap into an unreadable smear;
+        // fan them out deterministically instead.
+        const lane = ((this.floatSeq++ % 3) - 1) * 0.7;
+        sprite.position.set(e.pos.x + lane, 2.5, e.pos.z);
         this.scene.add(sprite);
         this.floats.push({ sprite, life: 1 });
       }
@@ -365,25 +422,24 @@ export class Renderer {
   }
 
   /**
-   * Every float owns a one-off canvas texture, and sells fire several times a second, so the
-   * texture has to go back to the GPU when the float expires or long sessions climb without
-   * bound. (Unlike the shared mesh resources, these are never reused.)
+   * A float's SpriteMaterial is its own (it fades independently), but its texture comes from the
+   * shared label cache — dispose the material only, or the next float reusing that text would
+   * draw against a freed texture.
    */
   private dropFloat(f: FloatingText): void {
     this.scene.remove(f.sprite);
-    const mat = f.sprite.material as THREE.SpriteMaterial;
-    mat.map?.dispose();
-    mat.dispose();
+    f.sprite.material.dispose();
   }
 
   render(dt: number): void {
-    for (const f of [...this.floats]) {
+    for (let i = this.floats.length - 1; i >= 0; i--) {
+      const f = this.floats[i];
       f.life -= dt;
       f.sprite.position.y += 1.5 * dt;
-      (f.sprite.material as THREE.SpriteMaterial).opacity = Math.max(f.life, 0);
+      f.sprite.material.opacity = Math.max(f.life, 0);
       if (f.life <= 0) {
         this.dropFloat(f);
-        this.floats.splice(this.floats.indexOf(f), 1);
+        this.floats.splice(i, 1);
       }
     }
     const pos = this.snow.geometry.getAttribute('position') as THREE.BufferAttribute;

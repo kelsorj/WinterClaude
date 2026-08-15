@@ -4,6 +4,8 @@ export type ResourceKind = 'wood' | 'meat' | 'gold';
 export type Currency = ResourceKind | 'cash';
 export type ToolId = 'hatchet' | 'axe' | 'scythe';
 export type ZoneId = 'start' | 'deepforest' | 'hunting' | 'quarry';
+/** Zones that begin sealed behind a gate — 'start' is always open, so it has no rect or wall. */
+export type GateZone = Exclude<ZoneId, 'start'>;
 
 export interface Player {
   pos: Vec2;

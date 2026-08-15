@@ -6,10 +6,19 @@ export function railResource(rail: Rail): ResourceKind {
   return rail.sourceType === 'turret' ? 'meat' : 'wood';
 }
 
-function takeFromSource(state: GameState, rail: Rail, n: number): number {
-  const m = rail.sourceType === 'turret'
+function sourceOf(state: GameState, rail: Rail): { active: boolean; output: number } | undefined {
+  return rail.sourceType === 'turret'
     ? state.turrets.find((t) => t.id === rail.sourceId)
     : state.sawmills.find((s) => s.id === rail.sourceId);
+}
+
+/** A rail (and its cart) only exists once the machine feeding it has been unlocked. */
+export function railActive(state: GameState, rail: Rail): boolean {
+  return sourceOf(state, rail)?.active ?? false;
+}
+
+function takeFromSource(state: GameState, rail: Rail, n: number): number {
+  const m = sourceOf(state, rail);
   if (!m) return 0;
   const got = Math.min(n, m.output);
   m.output -= got;

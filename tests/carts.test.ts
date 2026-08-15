@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cartPos, cartsTick, railResource } from '../src/game/systems/carts';
+import { cartPos, cartsTick, railActive, railResource } from '../src/game/systems/carts';
 import { v } from '../src/game/math';
 import { aCart, aRail, blankState } from './helpers';
 
@@ -51,6 +51,18 @@ describe('carts', () => {
     ticks(state, 10);
     expect(state.depot.wood).toBe(10); // everything delivered
     expect(state.sawmills[0].output).toBe(0);
+  });
+
+  it('railActive follows the source machine of either type', () => {
+    const state = setup();
+    expect(railActive(state, state.rails[0])).toBe(true);
+    state.sawmills[0].active = false;
+    expect(railActive(state, state.rails[0])).toBe(false);
+
+    state.turrets.push({ id: 'tu1', pos: v(0, 0), range: 10, cd: 0, active: true, output: 0 });
+    const turretRail = aRail({ id: 'r2', sourceType: 'turret', sourceId: 'tu1' });
+    expect(railActive(state, turretRail)).toBe(true);
+    expect(railActive(state, aRail({ id: 'r3', sourceId: 'missing' }))).toBe(false);
   });
 
   it('cartPos maps s onto the rail polyline', () => {

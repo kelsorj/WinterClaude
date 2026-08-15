@@ -1,10 +1,10 @@
 import { makeRng, v, type Rect, type Vec2 } from '../game/math';
-import type { Pad, Rail, Sawmill, SellStation, Turret, ZoneId } from '../game/state';
+import type { GateZone, Pad, Rail, Sawmill, SellStation, Turret, ZoneId } from '../game/state';
 
 export const WORLD_BOUNDS: Rect = { x0: -60, z0: -40, x1: 60, z1: 40 };
 
 /** Rectangles that block movement until their zone is opened. */
-export const ZONE_RECTS: Record<Exclude<ZoneId, 'start'>, Rect> = {
+export const ZONE_RECTS: Record<GateZone, Rect> = {
   deepforest: { x0: 30, z0: -34, x1: 60, z1: -6 },
   hunting:    { x0: 30, z0: 6,   x1: 60, z1: 34 },
   quarry:     { x0: -60, z0: -34, x1: -30, z1: -6 },

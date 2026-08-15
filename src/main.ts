@@ -1,3 +1,4 @@
+import { initAudio, isMuted, playFor, toggleMute } from './audio/sfx';
 import { createInitialState } from './game/init';
 import { createInput, intentFrom } from './game/input';
 import { update } from './game/update';
@@ -20,15 +21,18 @@ const ui = initUI({
     paused = false;
     ui.showPause(false);
   },
-  onToggleMute: () => false, // audio arrives in Task 17
-}, false);
+  onToggleMute: () => toggleMute(),
+}, isMuted());
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     paused = !paused;
     ui.showPause(paused);
   }
+  if (e.key.toLowerCase() === 'm') ui.setMuted(toggleMute());
 });
+window.addEventListener('pointerdown', initAudio, { once: true });
+window.addEventListener('keydown', initAudio, { once: true });
 
 const FIXED = 1 / 60;
 let acc = 0;
@@ -45,7 +49,9 @@ function frame(now: number): void {
       acc -= FIXED;
     }
   }
-  renderer.applyEvents(state.events.splice(0));
+  const events = state.events.splice(0);
+  renderer.applyEvents(events);
+  playFor(events);
   renderer.sync(state, dtReal);
   renderer.render(dtReal);
   ui.update(state);

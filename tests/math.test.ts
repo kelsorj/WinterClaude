@@ -36,11 +36,14 @@ describe('math', () => {
   });
 
   it('makeRng is deterministic in [0,1)', () => {
-    const a = makeRng(42);
-    const b = makeRng(42);
-    const va = a();
-    expect(va).toBe(b());
-    expect(va).toBeGreaterThanOrEqual(0);
-    expect(va).toBeLessThan(1);
+    const a = makeRng(42), b = makeRng(42), c = makeRng(43);
+    const seqA = [a(), a(), a()];
+    expect(seqA).toEqual([b(), b(), b()]);
+    expect(new Set(seqA).size).toBe(3);
+    expect(seqA).not.toEqual([c(), c(), c()]);
+    for (const x of seqA) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThan(1);
+    }
   });
 });

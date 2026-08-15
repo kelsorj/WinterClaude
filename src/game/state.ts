@@ -3,6 +3,7 @@ import type { Vec2 } from './math';
 export type ResourceKind = 'wood' | 'meat' | 'gold';
 export type Currency = ResourceKind | 'cash';
 export type ToolId = 'hatchet' | 'axe' | 'scythe';
+export type ZoneId = 'start' | 'deepforest' | 'hunting' | 'quarry';
 
 export interface Player {
   pos: Vec2;
@@ -17,12 +18,12 @@ export interface Player {
   knockback: Vec2;
 }
 
-export interface Tree { id: string; zone: string; pos: Vec2; hp: number; respawn: number }
-export interface GoldSeam { id: string; zone: string; pos: Vec2; hp: number; respawn: number }
+export interface Tree { id: string; zone: ZoneId; pos: Vec2; hp: number; respawn: number }
+export interface GoldSeam { id: string; zone: ZoneId; pos: Vec2; hp: number; respawn: number }
 
 export type BearState = 'sleep' | 'aggro' | 'dead';
 export interface Bear {
-  id: string; zone: string; pos: Vec2; home: Vec2;
+  id: string; zone: ZoneId; pos: Vec2; home: Vec2;
   hp: number; maxHp: number; state: BearState; respawn: number; attackCd: number;
 }
 
@@ -35,7 +36,7 @@ export interface SellStation {
 export type UnlockEffect =
   | { type: 'tool'; tool: ToolId }
   | { type: 'pickaxe' }
-  | { type: 'gate'; zone: string }
+  | { type: 'gate'; zone: ZoneId }
   | { type: 'machine'; machineId: string }
   | { type: 'speed'; mult: number }
   | { type: 'carry'; add: number };
@@ -85,7 +86,7 @@ export interface GameState {
   depot: Record<ResourceKind, number>;
   depotPos: Vec2;
   villagers: Villager[];
-  zonesOpen: Record<string, boolean>;
+  zonesOpen: Record<ZoneId, boolean>;
   rescued: number;
   won: boolean;
   stats: { chops: number; bearsKilled: number; earned: number };

@@ -29,7 +29,7 @@ export function inRect(p: Vec2, r: Rect): boolean {
 
 /** If p is inside r, push it to the nearest edge; otherwise return it unchanged. */
 export function pushOut(p: Vec2, r: Rect): Vec2 {
-  if (!inRect(p, r)) return p;
+  if (!inRect(p, r)) return v(p.x, p.z);
   const dL = p.x - r.x0, dR = r.x1 - p.x, dT = p.z - r.z0, dB = r.z1 - p.z;
   const m = Math.min(dL, dR, dT, dB);
   if (m === dL) return v(r.x0, p.z);

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { customersTick } from '../src/game/systems/customers';
 import {
-  CUSTOMER_QUEUE_CAP, CUSTOMER_TAKE, SELL_RATE,
+  CUSTOMER_INTERVAL, CUSTOMER_QUEUE_CAP, CUSTOMER_TAKE, SELL_RATE,
 } from '../src/content/balance';
-import { queueAnchor } from '../src/content/map';
+import { nearestRoadEnd, queueAnchor } from '../src/content/map';
 import { v } from '../src/game/math';
 import type { GameState, SellStation } from '../src/game/state';
 import { aCustomer, aStation, blankState } from './helpers';
@@ -63,6 +63,60 @@ describe('customersTick spawning', () => {
     expect(peak).toBe(CUSTOMER_QUEUE_CAP);
     // Only as many standing spots as the cap allows are ever addressed.
     expect(peakSlot).toBeLessThan(CUSTOMER_QUEUE_CAP);
+  });
+});
+
+describe('customer routing', () => {
+  it('gives shoppers spawned together off one road end their own lane and pace', () => {
+    const state = blankState();
+    const a = aStation({ id: 'st-a', stock: 10, spawnTimer: CUSTOMER_INTERVAL });
+    const b = aStation({
+      id: 'st-b', pos: v(-6, 1), matPos: v(-4, 1), stock: 10, spawnTimer: CUSTOMER_INTERVAL,
+    });
+    state.stations.push(a, b);
+    expect(nearestRoadEnd(a.pos)).toEqual(nearestRoadEnd(b.pos)); // same end of the road
+
+    customersTick(state, DT); // both benches draw a shopper on the same tick
+    expect(state.customers).toHaveLength(2);
+    const [c1, c2] = state.customers;
+    expect(Math.abs(c1.pos.z - c2.pos.z)).toBeGreaterThan(0.05); // spawned on separate lanes
+    ticks(state, 0.5);
+    expect(c1.pos.x).not.toBe(c2.pos.x); // and walking at slightly different paces
+  });
+
+  it('walks arrivals up a lane beside the line, never down it', () => {
+    const state = blankState();
+    const st = aStation({ stock: 10000 });
+    state.stations.push(st);
+    // A shopper standing on the line must never be in FRONT of its own slot: that space belongs
+    // to the shoppers ahead of it, and walking through it is walking through the queue.
+    let cutThroughLine = 0;
+    ticks(state, 40, () => {
+      for (const c of state.customers) {
+        if (c.state === 'leaving') continue;
+        const anchor = queueAnchor(st, c.slot);
+        const onLine = Math.abs(c.pos.x - anchor.x) < 0.3;
+        if (onLine && c.pos.z < anchor.z - 0.3) cutThroughLine++;
+      }
+    });
+    expect(cutThroughLine).toBe(0);
+  });
+
+  it('sends departures out on a different road lane than arrivals come in on', () => {
+    const state = blankState();
+    const st = aStation({ stock: 10000 });
+    state.stations.push(st);
+    ticks(state, 20);
+    const inbound = state.customers.filter((c) => c.state === 'arriving');
+    const outbound = state.customers.filter((c) => c.state === 'leaving');
+    expect(inbound.length).toBeGreaterThan(0);
+    expect(outbound.length).toBeGreaterThan(0);
+    // Both streams walk the road on the way to/from the same end; separating them in z is what
+    // stops leaving shoppers passing through arriving ones head-on.
+    const onRoad = (c: { pos: { z: number } }): boolean => c.pos.z < 5;
+    for (const out of outbound.filter(onRoad))
+      for (const inn of inbound.filter(onRoad))
+        expect(Math.abs(out.pos.z - inn.pos.z)).toBeGreaterThan(0.15);
   });
 });
 

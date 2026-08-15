@@ -56,17 +56,20 @@ export const HAUL_AMOUNT = 3;
  * Shop customers (Amendment 2A). Benches no longer mint cash on deposit: they hold stock, and
  * these numbers set how fast a line of buyers converts it.
  *
- * The cap covers everyone committed to a bench — standing in its line AND still walking in —
- * which is what bounds throughput: a shopper holds its slot for the whole trip (~12 s down the
- * 50-unit road, plus the dwell), so a stocked bench sells about `CAP / 13 s × TAKE ≈ 2.8` goods
- * per second. That outruns anything the player can gather or the machines can feed the depot,
- * while still leaving a backlog on the bubble — the ad's counting-down bench label.
+ * The cap covers everyone committed to a bench — standing in its line AND still walking in.
+ * It does NOT set throughput: as long as the line is never empty, a bench serves one shopper per
+ * `DWELL + SPACING / SPEED ≈ 1.06 s` whatever the cap is, so a stocked bench sells about
+ * `TAKE / 1.06 ≈ 2.8` goods per second. That outruns anything the player can gather or the
+ * machines can feed the depot, while still leaving a backlog on the bubble — the ad's
+ * counting-down bench label.
  *
- * The cap is 12 rather than the amendment's ~6 for the LOOK, checked in the browser: with a
- * 12-second walk-in, a cap of 6 lets shoppers reach the counter slower than the counter serves
- * them, so no line ever forms — the one thing the amendment is asking for. At 12 the road
- * carries a single-file stream (0.6 s apart is ~2.5 units of spacing) and 4-6 shoppers stand
- * waiting at a busy bench, matching the reference frames.
+ * What the cap buys is on-screen POPULATION, which is what the amendment is really about: a
+ * bench carries up to `CAP` walking in or waiting, plus the ~12 it has already served and sent
+ * back down the 50-unit road (a 12 s walk at one departure per 1.06 s), so the map holds roughly
+ * `stations × (CAP + 12)` shoppers. The amendment's ~6 was tried first and looks wrong: with a
+ * 12-second walk-in, shoppers reach the counter slower than the counter serves them, so no line
+ * ever forms. At 12 the road carries a single-file stream (0.6 s apart is ~2.5 units of spacing)
+ * and 4-6 shoppers stand waiting at a busy bench, matching the reference frames.
  */
 export const CUSTOMER_INTERVAL = 0.6;
 export const CUSTOMER_QUEUE_CAP = 12;

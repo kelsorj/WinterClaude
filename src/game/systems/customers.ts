@@ -1,12 +1,21 @@
 import {
   CUSTOMER_DWELL, CUSTOMER_INTERVAL, CUSTOMER_QUEUE_CAP, CUSTOMER_SPEED, CUSTOMER_TAKE, SELL_RATE,
 } from '../../content/balance';
-import { nearestRoadEnd, queueAnchor } from '../../content/map';
-import { dist, toward, v } from '../math';
+import { nearestRoadEnd, queueAnchor, queueLaneX, roadLaneZ } from '../../content/map';
+import { dist, hash01, toward, v } from '../math';
 import type { Customer, GameState, SellStation } from '../state';
 
 /** Close enough to count as standing on a spot; one frame of walking covers 0.07 at 60 Hz. */
 const ARRIVED = 0.05;
+
+/**
+ * Deterministic per-shopper variation, derived from the id so it costs no state and stays put
+ * across a save. Without it every shopper spawned in the same tick from the same road end walks
+ * the identical line at the identical pace and they render as one superimposed body; ±0.5 of
+ * lane and ±5% of pace is enough to pull a co-spawned group apart within a couple of strides.
+ */
+function laneJitter(id: string): number { return hash01(`${id}z`) - 0.5; }
+function speedOf(id: string): number { return CUSTOMER_SPEED * (0.95 + hash01(`${id}v`) * 0.1); }
 
 /** Shoppers committed to a bench: standing in its line plus still walking in. */
 function pipeline(state: GameState, stationId: string): Customer[] {
@@ -47,16 +56,17 @@ function spawnCustomers(state: GameState, dt: number): void {
     if (waiting.length >= CUSTOMER_QUEUE_CAP) continue;
     st.spawnTimer = 0;
     const end = nearestRoadEnd(st.pos);
-    const anchor = queueAnchor(st, 0);
+    const id = `cust${state.nextCustomerId++}`;
+    const z = roadLaneZ(end, false, laneJitter(id));
     state.customers.push({
-      id: `cust${state.nextCustomerId++}`,
+      id,
       stationId: st.id,
-      pos: v(end.x, end.z),
+      pos: v(end.x, z),
       state: 'arriving',
       slot: waiting.length,
-      // Down the road first, then up the line's lane: an approach straight from the road end
-      // would cut the corner through the bench and the cash mat.
-      path: [v(anchor.x, end.z)],
+      // Down the road first, then up the walk-in lane (steered per-slot once queued): an
+      // approach straight from the road end would cut the corner through the bench and the mat.
+      path: [v(queueLaneX(st), z)],
       timer: 0,
       bought: 0,
     });
@@ -78,20 +88,31 @@ function buy(state: GameState, st: SellStation, c: Customer): void {
   // blocking the line forever: queues must always drain.
   c.state = 'leaving';
   const end = nearestRoadEnd(st.pos);
-  c.path = [v(c.pos.x, end.z), v(end.x, end.z)];
+  // Straight out from the counter to the outbound lane: the line stands BEHIND the counter, so
+  // nothing is between a served shopper and the road, and the outbound lane keeps it clear of
+  // the arrivals still walking in.
+  const z = roadLaneZ(end, true, laneJitter(c.id));
+  c.path = [v(c.pos.x, z), v(end.x, z)];
 }
 
 function stepCustomer(state: GameState, c: Customer, dt: number): void {
   const st = state.stations.find((s) => s.id === c.stationId);
   if (!st) { c.state = 'leaving'; c.path = []; return; }
-  const step = CUSTOMER_SPEED * dt;
+  const step = speedOf(c.id) * dt;
   if (c.state === 'arriving') {
     if (!advance(c, step)) return;
     c.state = 'queued';
   }
   if (c.state === 'queued') {
     const anchor = queueAnchor(st, c.slot);
-    c.pos = toward(c.pos, anchor, step);
+    // A shopper still out in the walk-in lane closes the gap in z first and steps across only
+    // once it is level with its slot. Steering straight at the anchor instead would walk it
+    // diagonally through everyone standing between the lane mouth and that slot — and the slot
+    // moves forward while it walks, so the target row has to be re-read every tick rather than
+    // baked into the arrival path.
+    const inLane = Math.abs(c.pos.x - anchor.x) > ARRIVED;
+    const goal = inLane && Math.abs(c.pos.z - anchor.z) > ARRIVED ? v(c.pos.x, anchor.z) : anchor;
+    c.pos = toward(c.pos, goal, step);
     if (c.slot === 0 && dist(c.pos, anchor) <= ARRIVED) {
       c.state = 'buying';
       c.timer = 0;

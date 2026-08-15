@@ -23,6 +23,20 @@ interface SaveData {
   stats: GameState['stats'];
 }
 
+/**
+ * The depot as it should be written: every hauler's cargo folded back in. Haulers restore
+ * empty-handed at the depot, so goods in transit would otherwise simply evaporate on reload —
+ * with three crew, two miners and forty haulers each able to carry HAUL_AMOUNT, that is up to
+ * 129 goods per save. Returns a copy: serializing a running game must never move its resources.
+ */
+function conservedDepot(state: GameState): GameState['depot'] {
+  const depot = { ...state.depot };
+  for (const vil of state.villagers) {
+    if (vil.carrying !== null && vil.amount > 0) depot[vil.carrying] += vil.amount;
+  }
+  return depot;
+}
+
 export function serialize(state: GameState): string {
   const data: SaveData = {
     time: state.time,
@@ -36,7 +50,7 @@ export function serialize(state: GameState): string {
     thawed: state.villagers
       .filter((v) => v.kind === 'rescued' && v.state !== 'frozen').map((v) => v.id),
     felledTrees: state.trees.filter((t) => t.respawn > 0).map((t) => t.id),
-    depot: state.depot,
+    depot: conservedDepot(state),
     machineOutputs: Object.fromEntries([
       ...state.turrets.map((t) => [t.id, t.output]),
       ...state.sawmills.map((s) => [s.id, s.output]),
@@ -53,8 +67,13 @@ export function serialize(state: GameState): string {
  * carryCap, tool…) are restored verbatim rather than re-running pad effects, so
  * multiplicative upgrades are never double-applied. Machine `active` flags are
  * derived from completed machine pads.
+ *
+ * `previous` is the state being replaced, if a game is already running. Customers are transient
+ * and unsaved, so a loaded state would otherwise start numbering shoppers from 1 again and mint
+ * ids that the renderer still holds meshes for; pass the live state and numbering carries on
+ * above it instead.
  */
-export function deserialize(json: string): GameState {
+export function deserialize(json: string, previous?: GameState): GameState {
   const data = JSON.parse(json) as SaveData;
   if (!data || !data.player || !data.depot || !data.stats
     || !Array.isArray(data.padsDone) || !Array.isArray(data.thawed) || !data.machineOutputs) {
@@ -100,6 +119,7 @@ export function deserialize(json: string): GameState {
   for (const t of state.turrets) t.output = data.machineOutputs?.[t.id] ?? 0;
   for (const s of state.sawmills) s.output = data.machineOutputs?.[s.id] ?? 0;
   state.stats = data.stats;
+  state.nextCustomerId = Math.max(state.nextCustomerId, previous?.nextCustomerId ?? 0);
   return state;
 }
 
@@ -107,10 +127,10 @@ export function saveGame(state: GameState): void {
   try { localStorage.setItem(KEY, serialize(state)); } catch { /* storage unavailable */ }
 }
 
-export function loadGame(): GameState | null {
+export function loadGame(previous?: GameState): GameState | null {
   try {
     const json = localStorage.getItem(KEY);
-    return json ? deserialize(json) : null;
+    return json ? deserialize(json, previous) : null;
   } catch { return null; }
 }
 

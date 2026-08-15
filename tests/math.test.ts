@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  dist, inRect, makeRng, norm, pointOnPolyline, polylineLength, pushOut, toward, v,
+  dist, hash01, inRect, makeRng, norm, pointOnPolyline, polylineLength, pushOut, toward, v,
 } from '../src/game/math';
 
 describe('math', () => {
@@ -33,6 +33,27 @@ describe('math', () => {
     expect(pointOnPolyline(pts, 0)).toEqual({ x: 0, z: 0 });
     expect(pointOnPolyline(pts, 12)).toEqual({ x: 10, z: 2 });
     expect(pointOnPolyline(pts, 99)).toEqual({ x: 10, z: 5 });
+  });
+
+  it('hash01 is stable, in range, and spreads sequential ids apart', () => {
+    expect(hash01('cust7')).toBe(hash01('cust7'));
+    const ids = Array.from({ length: 64 }, (_, i) => hash01(`cust${i + 1}z`));
+    for (const x of ids) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThan(1);
+    }
+    // Sequential ids must not be CORRELATED: shoppers derive their walk lane from this and
+    // neighbouring ids spawn a fraction of a second apart, so `hash01('cust1z')` and
+    // `hash01('cust2z')` landing together means two shoppers walking inside each other. Two
+    // independent uniforms average 1/3 apart; reading FNV's low bits straight averaged ~0.003.
+    // (The minimum gap is deliberately not asserted — for a uniform hash, some neighbouring
+    // pair being close is expected, not a defect.)
+    let gap = 0;
+    for (let i = 1; i < ids.length; i++) gap += Math.abs(ids[i] - ids[i - 1]);
+    expect(gap / (ids.length - 1)).toBeGreaterThan(0.25);
+    // Spread across the range, not clustered in one corner of it.
+    const buckets = new Set(ids.map((x) => Math.floor(x * 4)));
+    expect(buckets.size).toBe(4);
   });
 
   it('makeRng is deterministic in [0,1)', () => {

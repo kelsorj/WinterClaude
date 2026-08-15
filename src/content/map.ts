@@ -90,10 +90,23 @@ export function stationDefs(): SellStation[] {
 
 /**
  * The two open ends of the camp road: shoppers walk on from the nearer one and leave the same
- * way. They sit just inside the world bounds so arrivals appear from off-camera, and just off
- * the road's centre line so the two directions of traffic do not share a lane.
+ * way. They sit just inside the world bounds so arrivals appear from off-camera, and on opposite
+ * sides of the road's centre line so the map's two ends do not feed one shared file of walkers.
  */
 export const ROAD_ENDS: Vec2[] = [v(-58, 2), v(58, -2)];
+
+/**
+ * How far a departing shopper's road lane sits from the arriving lane it walks beside. Both
+ * directions used to share one line down the road, so buyers heading home walked head-on
+ * through the buyers coming in. Wider than the ±0.5 spawn jitter, so the two lanes stay apart
+ * even where a late arrival and an early departure jitter toward each other.
+ */
+export const ROAD_LANE_OFFSET = 1.2;
+
+/** Road-lane z for a shopper with the given spawn jitter, walking in from / out to `end`. */
+export function roadLaneZ(end: Vec2, outbound: boolean, jitter: number): number {
+  return end.z + (outbound ? ROAD_LANE_OFFSET : 0) + jitter;
+}
 
 /**
  * Where a bench's line starts, relative to the bench, and how far apart shoppers stand in it.
@@ -103,9 +116,22 @@ export const ROAD_ENDS: Vec2[] = [v(-58, 2), v(58, -2)];
 export const QUEUE_OFFSET: Vec2 = v(-2.0, 1.2);
 export const QUEUE_SPACING = 1.1;
 
+/**
+ * How far the walk-in lane runs to the side of the standing line. Arrivals come up this lane,
+ * level with their slot, and only then step across into it — the line is entered from the side,
+ * never walked down. Wide enough that a shopper in the lane and one standing in the line do not
+ * overlap, and near enough the bench that the lane still crosses the road fence in its gap.
+ */
+export const QUEUE_LANE_DX = -1.6;
+
 /** Standing spot for the `slot`-th shopper in a bench's line; slot 0 is at the counter. */
 export function queueAnchor(st: SellStation, slot: number): Vec2 {
   return v(st.pos.x + QUEUE_OFFSET.x, st.pos.z + QUEUE_OFFSET.z + slot * QUEUE_SPACING);
+}
+
+/** x of the walk-in lane beside a bench's line — the same for every slot. */
+export function queueLaneX(st: SellStation): number {
+  return st.pos.x + QUEUE_OFFSET.x + QUEUE_LANE_DX;
 }
 
 /** Road end a shopper for this bench walks in from (and back out to). */

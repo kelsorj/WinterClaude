@@ -51,16 +51,6 @@ export function lam(color: number, opacity = 1): THREE.MeshLambertMaterial {
   return m;
 }
 
-/** Stable 0..1 from an entity id, so per-instance art variation survives reloads and saves. */
-export function hash01(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return ((h >>> 0) % 100000) / 100000;
-}
-
 /** Shared geometry table. Meshes vary by scale/rotation/position only, never by geometry. */
 const GEO = {
   unitBox: reg(new THREE.BoxGeometry(1, 1, 1)),

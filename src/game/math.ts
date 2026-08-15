@@ -63,6 +63,27 @@ export function pointOnPolyline(pts: Vec2[], s: number): Vec2 {
   return v(last.x, last.z);
 }
 
+/**
+ * Stable 0..1 from an entity id (FNV-1a). Per-entity variation derived from this needs no state
+ * field and no RNG call order, so it survives saves, reloads and being computed out of sequence —
+ * used for both art variation (coat colour, gait) and simulation jitter (walk lanes, speeds).
+ */
+export function hash01(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  // FNV's low bits hardly move when two ids differ only near the end — reading them straight
+  // (the old `% 100000`) put 'cust1z' and 'cust2z' 0.003 apart, i.e. two shoppers spawning on
+  // top of each other. One avalanche round spreads the difference over the whole word first,
+  // and the value is taken from the top bits.
+  h ^= h >>> 15;
+  h = Math.imul(h, 2246822507);
+  h ^= h >>> 13;
+  return (h >>> 8) / 0x1000000;
+}
+
 /** Deterministic LCG in [0,1) so the map layout is stable across runs. */
 export function makeRng(seed: number): () => number {
   let s = seed >>> 0;

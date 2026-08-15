@@ -1,15 +1,16 @@
 import * as THREE from 'three';
 import { TOOLS } from '../content/balance';
-import { WORLD_BOUNDS, ZONE_RECTS } from '../content/map';
+import { WORLD_BOUNDS, ZONE_RECTS, queueLaneX } from '../content/map';
 import { cartPos, railActive } from '../game/systems/carts';
 import { padAvailable } from '../game/systems/pads';
+import { hash01 } from '../game/math';
 import type { Rect, Vec2 } from '../game/math';
-import type { GameEvent, GameState, GateZone } from '../game/state';
+import type { GameEvent, GameState, GateZone, SellStation } from '../game/state';
 import type {
   BearRefs, CartRefs, CustomerRefs, PadRefs, PlayerRefs, SawmillRefs, TreeRefs, VillagerRefs,
 } from './meshes';
 import {
-  BEAR_BODY_SCALE, CAMP_TIERS, COLORS, CUSTOMER_COATS, SHARED, bubbleTexture, hash01, lam, makeBear,
+  BEAR_BODY_SCALE, CAMP_TIERS, COLORS, CUSTOMER_COATS, SHARED, bubbleTexture, lam, makeBear,
   makeBench, makeCampTier, makeCarryBox, makeCart, makeCrate, makeCustomer, makeDropMesh,
   makeFenceRun, makeGateWall, makeIconTextLabel, makeMatMesh, makePadLabel, makePadMesh,
   makePileStack, makePlayer, makeRailMesh, makeRock, makeSawmill, makeSeam, makeSlab,
@@ -268,6 +269,9 @@ export class Renderer {
     for (const st of state.stations) {
       common.push({ x: st.pos.x, z: st.pos.z, half: 2.2 });
       common.push({ x: st.matPos.x, z: st.matPos.z, half: 2.0 });
+      // The shoppers' walk-in lane crosses the fence line to the west of the bench, outside the
+      // bench's own gap; without this they file straight through the pickets.
+      common.push({ x: queueLaneX(st), z: st.pos.z, half: 1.0 });
     }
     for (const pad of state.pads) common.push({ x: pad.pos.x, z: pad.pos.z, half: 2.8 });
     for (const sz of [-1, 1]) {
@@ -554,6 +558,11 @@ export class Renderer {
    * the queue and its shuffle are simulated, not animated. All this adds is the walk cycle and a
    * facing derived from where the shopper moved since the last frame, so a line all faces the
    * bench and departing buyers turn around.
+   *
+   * There can be forty-odd of these on screen at once, every frame, so everything that is fixed
+   * for a shopper's whole visit — its bench, its gait phase — is resolved once at spawn and
+   * cached on the mesh, the last-position vector is mutated in place rather than reallocated,
+   * and the carried-goods material is assigned on the transition instead of every frame.
    */
   private syncCustomers(state: GameState): void {
     const live = new Set<string>();
@@ -561,23 +570,33 @@ export class Renderer {
       live.add(c.id);
       let m = this.customerMeshes.get(c.id);
       if (!m) {
-        m = setShadow(makeCustomer(Math.floor(hash01(c.id) * CUSTOMER_COATS.length)), true);
+        const h = hash01(c.id);
+        m = setShadow(makeCustomer(Math.floor(h * CUSTOMER_COATS.length)), true);
+        m.userData.station = state.stations.find((s) => s.id === c.stationId) ?? null;
+        m.userData.phase = h * 6;
+        m.userData.last = { x: c.pos.x, z: c.pos.z };
+        m.userData.carrying = false;
         this.customerMeshes.set(c.id, m);
         this.scene.add(m);
       }
-      const last = m.userData.last as Vec2 | undefined;
-      const dx = c.pos.x - (last?.x ?? c.pos.x);
-      const dz = c.pos.z - (last?.z ?? c.pos.z);
+      const last = m.userData.last as Vec2;
+      const dx = c.pos.x - last.x;
+      const dz = c.pos.z - last.z;
+      last.x = c.pos.x;
+      last.z = c.pos.z;
       const moved = Math.hypot(dx, dz);
-      m.userData.last = { x: c.pos.x, z: c.pos.z };
       if (moved > 1e-4) m.rotation.y = Math.atan2(dx, dz);
-      const bob = moved > 1e-4 ? Math.abs(Math.sin(this.t * 8 + hash01(c.id) * 6)) * 0.08 : 0;
+      const bob = moved > 1e-4
+        ? Math.abs(Math.sin(this.t * 8 + (m.userData.phase as number))) * 0.08
+        : 0;
       m.position.set(c.pos.x, bob, c.pos.z);
-      const refs = refsOf<CustomerRefs>(m);
-      refs.load.visible = c.bought > 0;
-      if (c.bought > 0) {
-        const st = state.stations.find((s) => s.id === c.stationId);
-        if (st) refs.load.material = lam(COLORS[st.resource]);
+      const carrying = c.bought > 0;
+      if (carrying !== m.userData.carrying) {
+        m.userData.carrying = carrying;
+        const refs = refsOf<CustomerRefs>(m);
+        refs.load.visible = carrying;
+        const st = m.userData.station as SellStation | null;
+        if (carrying && st) refs.load.material = lam(COLORS[st.resource]);
       }
     }
     for (const [id, m] of this.customerMeshes) {

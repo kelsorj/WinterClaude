@@ -102,6 +102,40 @@ describe('save round-trip', () => {
       .toBe(true);
   });
 
+  it('folds hauler cargo back into the depot instead of evaporating it', () => {
+    const state = createInitialState();
+    state.depot.wood = 4;
+    state.depot.meat = 1;
+    const hauler = state.villagers.find((v) => v.kind === 'rescued')!;
+    hauler.state = 'hauler'; hauler.carrying = 'wood'; hauler.amount = 3;
+    const crew = state.villagers.find((v) => v.kind === 'crew')!;
+    crew.carrying = 'meat'; crew.amount = 2;
+    const goods = (s: typeof state): number => s.depot.wood + s.depot.meat + s.depot.gold
+      + s.villagers.reduce((n, v) => n + (v.carrying ? v.amount : 0), 0);
+
+    const json = serialize(state);
+    const restored = deserialize(json);
+
+    // Haulers restore empty-handed at the depot, so their cargo has to land in the depot.
+    expect(goods(restored)).toBe(goods(state));
+    expect(restored.depot.wood).toBe(7);
+    expect(restored.depot.meat).toBe(3);
+    expect(restored.villagers.every((v) => v.carrying === null)).toBe(true);
+    // Saving must not move the running game's goods around.
+    expect(state.depot.wood).toBe(4);
+    expect(hauler.amount).toBe(3);
+  });
+
+  it('keeps customer numbering above a game that is already running', () => {
+    const json = serialize(createInitialState());
+    const live = createInitialState();
+    live.nextCustomerId = 57;
+    // Customers are transient, so ids would otherwise restart at 1 and collide with the
+    // shoppers the renderer still has meshes for.
+    expect(deserialize(json, live).nextCustomerId).toBe(57);
+    expect(deserialize(json).nextCustomerId).toBe(1);
+  });
+
   it('does not save customers — they are transient', () => {
     const state = createInitialState();
     state.stations[0].stock = 5;

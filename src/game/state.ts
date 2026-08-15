@@ -52,7 +52,7 @@ export interface Customer {
   slot: number;
   /** Remaining waypoints, walked in order. Drives 'arriving' and 'leaving'; queueing steers by slot. */
   path: Vec2[];
-  /** Counts down the dwell at the counter while buying. */
+  /** Seconds spent at the counter so far; the sale lands once it reaches `CUSTOMER_DWELL`. */
   timer: number;
   /** How much this shopper bought, so the renderer can hand it something to carry home. */
   bought: number;

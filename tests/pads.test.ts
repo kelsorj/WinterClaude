@@ -64,6 +64,19 @@ describe('padsTick', () => {
     expect(state.turrets[0].active).toBe(true);
   });
 
+  it('raises the camp tier and never lowers it', () => {
+    const state = blankState();
+    state.pads.push(aPad({ id: 'c3', effect: { type: 'camp', tier: 3 } }));
+    state.player.cash = 40;
+    ticks(state, 1);
+    expect(state.campTier).toBe(3);
+
+    state.pads.push(aPad({ id: 'c1', pos: v(0, 1), effect: { type: 'camp', tier: 1 } }));
+    ticks(state, 1);
+    expect(state.pads[1].done).toBe(true);
+    expect(state.campTier).toBe(3); // an out-of-order lower tier must not demote the camp
+  });
+
   it('applies speed multiplier', () => {
     const state = blankState();
     state.pads.push(aPad({ effect: { type: 'speed', mult: 1.3 } }));

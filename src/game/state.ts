@@ -41,7 +41,8 @@ export type UnlockEffect =
   | { type: 'gate'; zone: ZoneId }
   | { type: 'machine'; machineId: string }
   | { type: 'speed'; mult: number }
-  | { type: 'carry'; add: number };
+  | { type: 'carry'; add: number }
+  | { type: 'camp'; tier: number };
 
 export interface Pad {
   id: string; pos: Vec2; currency: Currency; cost: number;
@@ -89,6 +90,8 @@ export interface GameState {
   depot: Record<ResourceKind, number>;
   depotPos: Vec2;
   villagers: Villager[];
+  /** Highest camp building tier bought (0 = bare clearing, 4 = grand fort). */
+  campTier: number;
   zonesOpen: Record<ZoneId, boolean>;
   rescued: number;
   won: boolean;

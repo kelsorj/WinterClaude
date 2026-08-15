@@ -1,11 +1,13 @@
 import {
-  BEAR_MEAT, BEAR_RESPAWN, SEAM_HP, SEAM_RESPAWN, SEAM_YIELD, TOOLS,
-  TREE_HP, TREE_RESPAWN, TREE_YIELD,
+  BEAR_MEAT, BEAR_RESPAWN, SEAM_HP, SEAM_RESPAWN, SEAM_YIELD, TOOLS, TREE_YIELD,
 } from '../../content/balance';
 import { spawnDrops } from '../drops';
 import { dist, v } from '../math';
 import { carryTotal } from './pickup';
 import type { Bear, GameState, GoldSeam, Tree, Turret } from '../state';
+
+/** `tree.respawn` is a stump flag now rather than a countdown; any value > 0 means felled. */
+export const FELLED = 1;
 
 type Target =
   | { kind: 'tree'; tree: Tree }
@@ -13,8 +15,8 @@ type Target =
   | { kind: 'bear'; bear: Bear };
 
 export function harvestTick(state: GameState, dt: number): void {
-  for (const t of state.trees)
-    if (t.respawn > 0) { t.respawn -= dt; if (t.respawn <= 0) { t.respawn = 0; t.hp = TREE_HP; } }
+  // Trees never come back — a felled tree is a permanent stump, so the forest visibly thins out
+  // over a campaign. Only gold seams regenerate.
   for (const s of state.seams)
     if (s.respawn > 0) { s.respawn -= dt; if (s.respawn <= 0) { s.respawn = 0; s.hp = SEAM_HP; } }
 
@@ -63,7 +65,7 @@ function hit(state: GameState, target: Target, chopDmg: number, atkDmg: number):
     t.hp -= chopDmg;
     state.events.push({ type: 'chop', pos: v(t.pos.x, t.pos.z) });
     if (t.hp <= 0) {
-      t.respawn = TREE_RESPAWN;
+      t.respawn = FELLED; // permanent stump marker, never counted down
       state.stats.chops++;
       spawnDrops(state, 'wood', TREE_YIELD, t.pos);
       state.events.push({ type: 'treeFall', pos: v(t.pos.x, t.pos.z) });

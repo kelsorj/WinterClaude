@@ -51,6 +51,9 @@ describe('sawmills', () => {
     expect(state.trees[0].respawn).toBeGreaterThan(0);
     expect(state.sawmills[0].output).toBe(2); // TREE_YIELD
     expect(state.stats.chops).toBe(1);
+    ticks(state, 35); // the stump is permanent, so the mill idles instead of re-felling it
+    expect(state.trees[0].respawn).toBeGreaterThan(0);
+    expect(state.sawmills[0].output).toBe(2);
   });
 
   it('does nothing when no standing tree is in radius', () => {

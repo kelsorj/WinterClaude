@@ -69,8 +69,9 @@ const GEO = {
   millBlade: reg(new THREE.CylinderGeometry(0.7, 0.7, 0.08, 16)),
   cartBox: reg(new THREE.BoxGeometry(1.0, 0.5, 0.7)),
   cartLoad: reg(new THREE.BoxGeometry(0.8, 0.4, 0.5)),
-  depotSlab: reg(new THREE.BoxGeometry(4.5, 0.3, 4.5)),
-  depotPost: reg(new THREE.CylinderGeometry(0.12, 0.12, 1.6, 6)),
+  /** Unit primitives: camp structures scale these instead of minting geometry per tier. */
+  unitCyl: reg(new THREE.CylinderGeometry(0.5, 0.5, 1, 10)),
+  unitCone: reg(new THREE.ConeGeometry(0.5, 1, 8)),
   seamRock: reg(new THREE.SphereGeometry(1.1, 7, 5)),
   seamNugget: reg(new THREE.IcosahedronGeometry(0.25, 0)),
   /** Unit-length along X: scale.x carries the span so every wall/rail shares one buffer. */
@@ -319,16 +320,161 @@ export function makeCart(): THREE.Group {
   return g;
 }
 
-export function makeDepot(): THREE.Group {
-  const g = new THREE.Group();
-  const slab = new THREE.Mesh(GEO.depotSlab, lam(0x9a6b3f));
-  slab.position.y = 0.15;
-  g.add(slab);
-  for (const [px, pz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]] as const) {
-    const post = new THREE.Mesh(GEO.depotPost, lam(COLORS.trunk));
-    post.position.set(px, 0.8, pz);
-    g.add(post);
+const box = (w: number, h: number, d: number, color: number): THREE.Mesh => {
+  const m = new THREE.Mesh(GEO.unitBox, lam(color));
+  m.scale.set(w, h, d);
+  return m;
+};
+
+const cyl = (r: number, h: number, color: number): THREE.Mesh => {
+  const m = new THREE.Mesh(GEO.unitCyl, lam(color));
+  m.scale.set(r * 2, h, r * 2);
+  return m;
+};
+
+const cone = (r: number, h: number, color: number): THREE.Mesh => {
+  const m = new THREE.Mesh(GEO.unitCone, lam(color));
+  m.scale.set(r * 2, h, r * 2);
+  return m;
+};
+
+const at = <T extends THREE.Object3D>(m: T, x: number, y: number, z: number): T => {
+  m.position.set(x, y, z);
+  return m;
+};
+
+const CAMP_WOOD = 0xb07a45;
+const CAMP_LOG = 0x9a6b3f;
+const CAMP_RED = 0xc0392b;
+const CAMP_RED_DARK = 0x8f2b20;
+
+/** Where the depot stockpiles sit and how high the camp label floats, per tier. */
+export interface CampTierInfo {
+  labelY: number;
+  floorY: number;
+  piles: { x: number; z: number }[];
+}
+
+export const CAMP_TIERS: CampTierInfo[] = [
+  { labelY: 2.0, floorY: 0, piles: [{ x: -1.6, z: 2.2 }, { x: 0, z: 2.2 }, { x: 1.6, z: 2.2 }] },
+  { labelY: 3.4, floorY: 0.3, piles: [{ x: -1.6, z: 3.3 }, { x: 0, z: 3.3 }, { x: 1.6, z: 3.3 }] },
+  { labelY: 4.2, floorY: 0.3, piles: [{ x: -1.7, z: 1.4 }, { x: 0.2, z: 1.4 }, { x: 2.0, z: 1.4 }] },
+  { labelY: 5.6, floorY: 0.35, piles: [{ x: -2.0, z: -1.0 }, { x: 0, z: -1.0 }, { x: 2.0, z: -1.0 }] },
+  { labelY: 6.4, floorY: 0.4, piles: [{ x: -2.3, z: -1.2 }, { x: 0, z: -1.2 }, { x: 2.3, z: -1.2 }] },
+];
+
+/** Snowy clearing with survey stakes: the camp site before any wood is poured in. */
+function campClearing(g: THREE.Group): void {
+  g.add(at(cyl(3.6, 0.08, 0xe9f2f9), 0, 0.04, 0));
+  for (const [sx, sz] of [[-2.7, -2.7], [2.7, -2.7], [-2.7, 2.7], [2.7, 2.7]] as const) {
+    g.add(at(cyl(0.09, 1.3, 0xd8d2c4), sx, 0.65, sz));
+    g.add(at(box(0.34, 0.3, 0.1, CAMP_RED), sx, 1.35, sz));
   }
+  g.add(at(box(0.8, 0.55, 0.8, CAMP_WOOD), 2.2, 0.28, 1.4));
+}
+
+/** Tier 1 — Shelter Hut: platform, corner posts, half-walls, red roof, crates. */
+function campHut(g: THREE.Group): void {
+  g.add(at(box(5, 0.3, 5, CAMP_LOG), 0, 0.15, 0));
+  for (const [px, pz] of [[-2.2, -2.2], [2.2, -2.2], [-2.2, 2.2], [2.2, 2.2]] as const)
+    g.add(at(cyl(0.16, 2.0, COLORS.trunk), px, 1.3, pz));
+  g.add(at(box(5, 1.5, 0.25, CAMP_WOOD), 0, 1.05, -2.3));
+  g.add(at(box(0.25, 1.5, 5, CAMP_WOOD), -2.3, 1.05, 0));
+  const roof = at(box(5.8, 0.28, 5.8, CAMP_RED), 0, 2.44, 0);
+  roof.rotation.x = 0.06;
+  g.add(roof);
+  for (const [cx, cz] of [[1.5, 1.5], [2.0, 0.7], [1.2, 0.6]] as const)
+    g.add(at(box(0.8, 0.7, 0.8, CAMP_WOOD), cx, 0.65, cz));
+}
+
+/** Tier 2 — Stockade: stacked log walls on two sides, red barn doors on the others. */
+function campStockade(g: THREE.Group): void {
+  g.add(at(box(6.6, 0.3, 6.6, CAMP_LOG), 0, 0.15, 0));
+  for (let course = 0; course < 4; course++) {
+    const y = 0.55 + course * 0.46;
+    const tint = course % 2 === 0 ? CAMP_LOG : CAMP_WOOD;
+    const north = at(cyl(0.23, 6.6, tint), 0, y, -3.1);
+    north.rotation.z = Math.PI / 2;
+    g.add(north);
+    const west = at(cyl(0.23, 6.6, tint), -3.1, y, 0);
+    west.rotation.x = Math.PI / 2;
+    g.add(west);
+  }
+  for (const [dx, dz, rotY] of [[0, 3.2, 0], [3.2, 0, Math.PI / 2]] as const) {
+    const door = new THREE.Group();
+    door.add(box(3.0, 2.3, 0.25, CAMP_RED));
+    door.add(at(box(0.22, 2.3, 0.32, CAMP_RED_DARK), -0.7, 0, 0));
+    door.add(at(box(0.22, 2.3, 0.32, CAMP_RED_DARK), 0.7, 0, 0));
+    door.position.set(dx, 1.45, dz);
+    door.rotation.y = rotY;
+    g.add(door);
+  }
+  for (const [px, pz] of [[-3.2, -3.2], [3.2, -3.2], [-3.2, 3.2], [3.2, 3.2]] as const)
+    g.add(at(cyl(0.26, 2.9, COLORS.trunk), px, 1.45, pz));
+  g.add(at(box(0.9, 0.75, 0.9, CAMP_WOOD), 2.4, 0.68, -2.3));
+}
+
+/** Tier 3 — Fort: tall red plank walls, gate towers, interior shelves for the stockpiles. */
+function campFort(g: THREE.Group): void {
+  g.add(at(box(8, 0.35, 8, CAMP_LOG), 0, 0.18, 0));
+  const wall = (w: number, x: number, z: number, rotY: number): void => {
+    const seg = new THREE.Group();
+    seg.add(box(w, 3.2, 0.4, CAMP_RED));
+    for (let i = 0; i < Math.max(2, Math.round(w / 1.1)); i++)
+      seg.add(at(box(0.18, 3.2, 0.5, CAMP_RED_DARK), -w / 2 + (i + 0.5) * (w / Math.round(w / 1.1)), 0, 0));
+    seg.position.set(x, 1.95, z);
+    seg.rotation.y = rotY;
+    g.add(seg);
+  };
+  wall(8, 0, -3.8, 0);
+  wall(8, -3.8, 0, Math.PI / 2);
+  wall(8, 3.8, 0, Math.PI / 2);
+  wall(2.6, -2.7, 3.8, 0); // the south face keeps a gap: that is the way in
+  wall(2.6, 2.7, 3.8, 0);
+  for (const tx of [-3.8, 3.8]) {
+    g.add(at(box(1.5, 4.4, 1.5, 0xb0492b), tx, 2.2, 3.8));
+    g.add(at(cone(1.3, 1.4, CAMP_RED_DARK), tx, 5.1, 3.8));
+  }
+  for (const sy of [1.0, 2.0]) g.add(at(box(6.4, 0.18, 0.8, CAMP_WOOD), 0, sy, -3.2));
+  g.add(at(box(1.0, 0.9, 1.0, CAMP_WOOD), 3.0, 0.8, -2.6));
+}
+
+/** Tier 4 — Grand Fort: log-cabin courses, banner and a cash vault in the yard. */
+function campGrandFort(g: THREE.Group): void {
+  g.add(at(box(9, 0.4, 9, CAMP_LOG), 0, 0.2, 0));
+  for (let course = 0; course < 7; course++) {
+    const y = 0.6 + course * 0.52;
+    const tint = course % 2 === 0 ? CAMP_LOG : CAMP_WOOD;
+    const len = course % 2 === 0 ? 9 : 8.6;
+    for (const [x, z, axis] of [[0, -4.3, 'x'], [-4.3, 0, 'z'], [4.3, 0, 'z']] as const) {
+      const log = at(cyl(0.26, len, tint), x, y, z);
+      if (axis === 'x') log.rotation.z = Math.PI / 2; else log.rotation.x = Math.PI / 2;
+      g.add(log);
+    }
+    for (const sx of [-3.2, 3.2]) {
+      const log = at(cyl(0.26, 2.6, tint), sx, y, 4.3);
+      log.rotation.z = Math.PI / 2;
+      g.add(log);
+    }
+  }
+  for (const [px, pz] of [[-4.4, -4.4], [4.4, -4.4], [-4.4, 4.4], [4.4, 4.4]] as const)
+    g.add(at(cyl(0.34, 4.6, COLORS.trunk), px, 2.3, pz));
+  g.add(at(cyl(0.12, 5.4, 0xd8d2c4), 0, 3.1, -4.3));
+  const flag = at(box(2.2, 1.3, 0.12, COLORS.playerCoat), 1.1, 5.1, -4.3);
+  g.add(flag);
+  g.add(at(box(2.2, 0.3, 0.16, 0xf4f8fb), 1.1, 4.7, -4.3));
+  // Cash vault: dark strongbox with gold trim, plus loose bars on the counter.
+  g.add(at(box(2.4, 1.7, 1.5, 0x3a4046), 2.6, 1.25, 2.2));
+  g.add(at(box(2.5, 0.22, 1.6, COLORS.gold), 2.6, 2.2, 2.2));
+  g.add(at(box(0.7, 0.7, 0.12, COLORS.gold), 2.6, 1.3, 2.98));
+  for (const bx of [-2.6, -1.9]) g.add(at(box(0.6, 0.22, 0.35, COLORS.gold), bx, 0.51, 2.6));
+}
+
+/** The camp building at a given tier, centred on the depot position. */
+export function makeCampTier(tier: number): THREE.Group {
+  const g = new THREE.Group();
+  const builders = [campClearing, campHut, campStockade, campFort, campGrandFort];
+  builders[Math.max(0, Math.min(builders.length - 1, Math.round(tier)))](g);
   return g;
 }
 

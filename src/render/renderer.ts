@@ -9,9 +9,9 @@ import type {
   BearRefs, CartRefs, PadRefs, PlayerRefs, SawmillRefs, TreeRefs, VillagerRefs,
 } from './meshes';
 import {
-  COLORS, ICONS, SHARED, makeBear, makeBench, makeCarryBox, makeCart, makeDepot, makeDropMesh,
-  makeGateWall, makeLabel, makeMatMesh, makePadMesh, makePile, makePlayer, makeRailMesh,
-  makeSawmill, makeSeam, makeTool, makeTree, makeTurret, makeVillager, refsOf,
+  CAMP_TIERS, COLORS, ICONS, SHARED, makeBear, makeBench, makeCampTier, makeCarryBox, makeCart,
+  makeDropMesh, makeGateWall, makeLabel, makeMatMesh, makePadMesh, makePile, makePlayer,
+  makeRailMesh, makeSawmill, makeSeam, makeTool, makeTree, makeTurret, makeVillager, refsOf,
 } from './meshes';
 
 const CAM_OFFSET = new THREE.Vector3(16, 20, 16);
@@ -54,6 +54,7 @@ export class Renderer {
   private floatSeq = 0;
   private lastToolKey = '';
   private lastCarryKey = '';
+  private lastCampTier = -1;
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
@@ -180,12 +181,6 @@ export class Renderer {
       this.meshes.set(rail.id, g);
       this.scene.add(g);
     }
-    const depot = makeDepot();
-    depot.position.set(state.depotPos.x, 0, state.depotPos.z);
-    const depotLabel = makeLabel('📦');
-    depotLabel.position.y = 2.6;
-    depot.add(depotLabel);
-    this.scene.add(depot);
     this.buildGates();
   }
 
@@ -203,6 +198,7 @@ export class Renderer {
     this.gates.clear();
     this.lastToolKey = '';
     this.lastCarryKey = '';
+    this.lastCampTier = -1;
     this.buildWorld();
     this.buildStatic(state);
   }
@@ -316,9 +312,7 @@ export class Renderer {
       load.visible = cart.load > 0;
       load.scale.y = Math.max(cart.load / cart.cap, 0.2);
     }
-    this.syncPile('depot-wood', state.depotPos.x - 1.4, state.depotPos.z - 1.4, state.depot.wood, COLORS.wood, 3, 14);
-    this.syncPile('depot-meat', state.depotPos.x, state.depotPos.z - 1.4, state.depot.meat, COLORS.meat, 3, 14);
-    this.syncPile('depot-gold', state.depotPos.x + 1.4, state.depotPos.z - 1.4, state.depot.gold, COLORS.gold, 3, 14);
+    this.syncCamp(state);
     for (let i = 0; i < state.villagers.length; i++) {
       const vil = state.villagers[i];
       const m = this.ensure(vil.id, makeVillager);
@@ -341,12 +335,47 @@ export class Renderer {
   }
 
   /**
+   * The camp is one structure that is swapped wholesale when a camp pad completes; the depot
+   * stockpiles and label follow the tier's layout (outside the hut, inside the fort).
+   */
+  private syncCamp(state: GameState): void {
+    const tier = Math.max(0, Math.min(CAMP_TIERS.length - 1, Math.round(state.campTier)));
+    if (tier !== this.lastCampTier) {
+      this.lastCampTier = tier;
+      const old = this.meshes.get('camp');
+      if (old) {
+        this.scene.remove(old);
+        disposeSubtree(old);
+        this.meshes.delete('camp');
+      }
+      const g = makeCampTier(tier);
+      g.position.set(state.depotPos.x, 0, state.depotPos.z);
+      const label = makeLabel('📦');
+      label.position.y = CAMP_TIERS[tier].labelY;
+      g.add(label);
+      this.meshes.set('camp', g);
+      this.scene.add(g);
+    }
+    const info = CAMP_TIERS[tier];
+    const kinds = ['wood', 'meat', 'gold'] as const;
+    const colors = [COLORS.wood, COLORS.meat, COLORS.gold];
+    for (let i = 0; i < kinds.length; i++) {
+      const spot = info.piles[i];
+      this.syncPile(
+        `depot-${kinds[i]}`, state.depotPos.x + spot.x, state.depotPos.z + spot.z,
+        state.depot[kinds[i]], colors[i], 3, 14, info.floorY,
+      );
+    }
+  }
+
+  /**
    * One pile renderer for station cash, machine outputs and depot stockpiles: `unitsPerBox`
    * resources make one box and the stack is capped at `cap` boxes so a runaway stockpile can
-   * never grow without bound.
+   * never grow without bound. `baseY` lifts a pile onto a camp platform.
    */
   private syncPile(
-    id: string, x: number, z: number, count: number, color: number, unitsPerBox: number, cap: number,
+    id: string, x: number, z: number, count: number, color: number,
+    unitsPerBox: number, cap: number, baseY = 0,
   ): void {
     const m = this.ensure(id, () => makePile(color));
     m.visible = count > 0;
@@ -354,7 +383,7 @@ export class Renderer {
     const boxes = Math.min(Math.ceil(count / unitsPerBox), cap);
     const h = 0.06 + boxes * PILE_BOX_H;
     m.scale.y = h;
-    m.position.set(x, h / 2, z);
+    m.position.set(x, baseY + h / 2, z);
   }
 
   private syncPlayer(state: GameState): void {

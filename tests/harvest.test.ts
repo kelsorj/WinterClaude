@@ -29,12 +29,15 @@ describe('harvestTick', () => {
     expect(state.drops).toHaveLength(0);
   });
 
-  it('respawns stumps after the timer', () => {
+  it('leaves felled trees as permanent stumps', () => {
     const state = blankState();
-    state.trees.push(aTree({ pos: v(50, 0), hp: 0, respawn: 0.5 }));
-    ticks(state, 1);
-    expect(state.trees[0].respawn).toBe(0);
-    expect(state.trees[0].hp).toBe(3);
+    state.trees.push(aTree()); // in range, hp 3
+    ticks(state, 2.0);
+    expect(state.trees[0].respawn).toBeGreaterThan(0);
+    ticks(state, 35); // well past any old respawn window
+    expect(state.trees[0].hp).toBeLessThanOrEqual(0);
+    expect(state.trees[0].respawn).toBeGreaterThan(0);
+    expect(state.drops.filter((d) => d.kind === 'wood')).toHaveLength(2); // felled exactly once
   });
 
   it('mines gold seams only with the pickaxe', () => {

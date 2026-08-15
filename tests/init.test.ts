@@ -9,7 +9,8 @@ describe('createInitialState', () => {
   const state = createInitialState();
 
   it('spawns the expected entity populations', () => {
-    expect(state.trees.length).toBeGreaterThanOrEqual(50);
+    expect(state.trees.length).toBeGreaterThanOrEqual(250); // finite forest: no respawns
+    expect(state.pads.length).toBe(17);
     expect(state.bears.length).toBeGreaterThanOrEqual(15);
     expect(state.seams.length).toBe(6);
     expect(state.villagers.length).toBe(40);
@@ -49,6 +50,20 @@ describe('createInitialState', () => {
       .map((p) => (p.effect.type === 'machine' ? p.effect.machineId : null))
       .filter((x): x is string => x !== null);
     expect(padMachineIds.sort()).toEqual(['sawmill1', 'turret1', 'turret2']);
+  });
+
+  it('camp pads cover tiers 1-4 exactly once each', () => {
+    const tiers = state.pads
+      .map((p) => (p.effect.type === 'camp' ? p.effect.tier : null))
+      .filter((x): x is number => x !== null);
+    expect(tiers.sort()).toEqual([1, 2, 3, 4]);
+    expect(state.campTier).toBe(0);
+  });
+
+  it('the whole forest yields more wood than every wood cost combined', () => {
+    const woodCosts = state.pads.filter((p) => p.currency === 'wood')
+      .reduce((sum, p) => sum + p.cost, 0);
+    expect(state.trees.length * 2).toBeGreaterThan(woodCosts * 2); // TREE_YIELD = 2
   });
 
   it('gate pads cover every closed zone', () => {

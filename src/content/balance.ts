@@ -22,7 +22,6 @@ export const PAD_RANGE = 1.8;
 
 export const TREE_HP = 3;
 export const TREE_YIELD = 2;
-export const TREE_RESPAWN = 20;
 
 export const SEAM_HP = 4;
 export const SEAM_YIELD = 1;

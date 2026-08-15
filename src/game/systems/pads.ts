@@ -28,6 +28,7 @@ export function applyEffect(state: GameState, pad: Pad): void {
   else if (e.type === 'gate') state.zonesOpen[e.zone] = true;
   else if (e.type === 'speed') state.player.speed *= e.mult;
   else if (e.type === 'carry') state.player.carryCap += e.add;
+  else if (e.type === 'camp') state.campTier = Math.max(state.campTier, e.tier);
   else activateMachine(state, e.machineId);
 }
 

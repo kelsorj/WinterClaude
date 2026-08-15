@@ -61,8 +61,11 @@ export function deserialize(json: string): GameState {
     if (!pad.done) pad.paid = data.padsPaid?.[pad.id] ?? 0;
   }
   for (const st of state.stations) st.matCash = data.matCash?.[st.id] ?? 0;
+  // Machine activation and the camp tier are derived from completed pads rather than stored.
   for (const pad of state.pads) {
-    if (pad.done && pad.effect.type === 'machine') activateMachine(state, pad.effect.machineId);
+    if (!pad.done) continue;
+    if (pad.effect.type === 'machine') activateMachine(state, pad.effect.machineId);
+    if (pad.effect.type === 'camp') state.campTier = Math.max(state.campTier, pad.effect.tier);
   }
   for (const vil of state.villagers) {
     if (data.thawed.includes(vil.id)) {

@@ -15,6 +15,7 @@ export function blankState(): GameState {
     pads: [], stations: [], turrets: [], sawmills: [], rails: [], carts: [],
     depot: { wood: 0, meat: 0, gold: 0 }, depotPos: v(18, 0),
     villagers: [],
+    campTier: 0,
     zonesOpen: { start: true, deepforest: false, hunting: false, quarry: false },
     rescued: 0, won: false,
     stats: { chops: 0, bearsKilled: 0, earned: 0 },

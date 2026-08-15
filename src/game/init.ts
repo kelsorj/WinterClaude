@@ -36,6 +36,7 @@ export function createInitialState(): GameState {
     villagers: villagerDefs().map((p, i) => ({
       id: `vil${i}`, pos: v(p.x, p.z), state: 'frozen' as const, carrying: null, amount: 0,
     })),
+    campTier: 0,
     zonesOpen: { start: true, deepforest: false, hunting: false, quarry: false },
     rescued: 0, won: false,
     stats: { chops: 0, bearsKilled: 0, earned: 0 },

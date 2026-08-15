@@ -45,6 +45,17 @@ describe('save round-trip', () => {
     expect(restored.time).toBe(321);
   });
 
+  it('derives the camp tier from completed camp pads', () => {
+    const state = createInitialState();
+    for (const pad of state.pads) {
+      if (['p-camp1', 'p-camp2'].includes(pad.id)) { pad.done = true; pad.paid = pad.cost; }
+    }
+    state.campTier = 2;
+    const restored = deserialize(serialize(state));
+    expect(restored.campTier).toBe(2);
+    expect(deserialize(serialize(createInitialState())).campTier).toBe(0);
+  });
+
   it('preserves the won flag', () => {
     const state = createInitialState();
     state.won = true;

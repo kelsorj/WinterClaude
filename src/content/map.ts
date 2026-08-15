@@ -14,15 +14,30 @@ export const PLAYER_SPAWN: Vec2 = v(0, 0);
 export const DEPOT_POS: Vec2 = v(18, 0);
 export const CAMP_POS: Vec2 = v(0, 2);
 
+/**
+ * The forest is finite: nothing regrows, so it has to be big enough that the whole campaign's
+ * wood costs come out of it with room to spare (~295 trees × 2 logs). Every jitter range is
+ * chosen so start-zone trees stay clear of the gated rects and gated trees stay inside theirs.
+ */
 export function treeDefs(): { pos: Vec2; zone: ZoneId }[] {
   const rng = makeRng(42);
   const defs: { pos: Vec2; zone: ZoneId }[] = [];
-  for (let i = 0; i < 6; i++)
-    for (let j = 0; j < 5; j++)
-      defs.push({ zone: 'start', pos: v(-27 + i * 5 + rng() * 2, -30 + j * 5 + rng() * 2) });
-  for (let i = 0; i < 6; i++)
-    for (let j = 0; j < 5; j++)
-      defs.push({ zone: 'deepforest', pos: v(33 + i * 4.5 + rng() * 2, -31 + j * 5 + rng() * 2) });
+  // Dense starter forest north of the camp road (x stays inside ±30, clear of quarry/deepforest).
+  for (let i = 0; i < 17; i++)
+    for (let j = 0; j < 8; j++)
+      defs.push({ zone: 'start', pos: v(-28 + i * 3.4 + rng() * 1.6, -33 + j * 3.2 + rng() * 1.5) });
+  // Northern tree band running the full width of the map, north of every gated rect.
+  for (let i = 0; i < 33; i++)
+    for (let j = 0; j < 2; j++)
+      defs.push({ zone: 'start', pos: v(-58 + i * 3.6 + rng() * 1.6, -39 + j * 3.2 + rng() * 0.8) });
+  // Deep forest: the densest stand, the reason to buy the first gate.
+  for (let i = 0; i < 9; i++)
+    for (let j = 0; j < 9; j++)
+      defs.push({ zone: 'deepforest', pos: v(31 + i * 3.2 + rng() * 1.4, -33 + j * 3.0 + rng() * 1.4) });
+  // A few strays in the hunting grounds, kept off the bear rows (z ≈ 12-15 and 22-25).
+  for (let i = 0; i < 4; i++)
+    for (const z of [8.5, 18.5, 29.5])
+      defs.push({ zone: 'hunting', pos: v(32 + i * 6 + rng() * 1.2, z + rng() * 1.2) });
   return defs;
 }
 
@@ -88,19 +103,26 @@ export function padDefs(): Pad[] {
     id: string, pos: Vec2, currency: Pad['currency'], cost: number,
     effect: Pad['effect'], requires?: string,
   ): Pad => ({ id, pos, currency, cost, paid: 0, done: false, effect, requires, payTimer: 0 });
+  // The camp pads ring the depot yard; everything else hangs off the chain that grows the camp:
+  // camp1 → axe → {carry1, speed1, gate-deep} → camp2 → {turret1, sawmill1} → scythe → camp3 →
+  // gate-hunt → turret2, and sawmill1 → gate-quarry → pickaxe → {carry2, speed2, camp4}.
   return [
-    p('p-axe',        v(-4, -4),   'cash', 10, { type: 'tool', tool: 'axe' }),
+    p('p-camp1',      v(11, -4),   'wood', 12, { type: 'camp', tier: 1 }),
+    p('p-axe',        v(-4, -4),   'cash', 10, { type: 'tool', tool: 'axe' }, 'p-camp1'),
     p('p-carry1',     v(-10, -4),  'cash', 30, { type: 'carry', add: 12 }, 'p-axe'),
     p('p-speed1',     v(-16, -4),  'cash', 40, { type: 'speed', mult: 1.3 }, 'p-axe'),
     p('p-gate-deep',  v(24, -5),   'wood', 15, { type: 'gate', zone: 'deepforest' }, 'p-axe'),
-    p('p-turret1',    v(31, -8),   'cash', 25, { type: 'machine', machineId: 'turret1' }, 'p-gate-deep'),
-    p('p-sawmill1',   v(34, -16),  'cash', 30, { type: 'machine', machineId: 'sawmill1' }, 'p-gate-deep'),
+    p('p-camp2',      v(11, 4),    'wood', 40, { type: 'camp', tier: 2 }, 'p-gate-deep'),
+    p('p-turret1',    v(31, -8),   'cash', 25, { type: 'machine', machineId: 'turret1' }, 'p-camp2'),
+    p('p-sawmill1',   v(34, -16),  'cash', 30, { type: 'machine', machineId: 'sawmill1' }, 'p-camp2'),
     p('p-scythe',     v(4, -4),    'cash', 40, { type: 'tool', tool: 'scythe' }, 'p-turret1'),
-    p('p-gate-hunt',  v(24, 5),    'meat', 20, { type: 'gate', zone: 'hunting' }, 'p-scythe'),
+    p('p-camp3',      v(15, -6),   'wood', 90, { type: 'camp', tier: 3 }, 'p-scythe'),
+    p('p-gate-hunt',  v(24, 5),    'meat', 20, { type: 'gate', zone: 'hunting' }, 'p-camp3'),
     p('p-turret2',    v(31, 8),    'cash', 50, { type: 'machine', machineId: 'turret2' }, 'p-gate-hunt'),
     p('p-gate-quarry', v(-24, -5), 'cash', 60, { type: 'gate', zone: 'quarry' }, 'p-sawmill1'),
     p('p-pickaxe',    v(-31, -8),  'cash', 30, { type: 'pickaxe' }, 'p-gate-quarry'),
     p('p-carry2',     v(-10, 4),   'gold', 8,  { type: 'carry', add: 24 }, 'p-pickaxe'),
     p('p-speed2',     v(-16, 4),   'gold', 10, { type: 'speed', mult: 1.3 }, 'p-pickaxe'),
+    p('p-camp4',      v(15, 6),    'gold', 12, { type: 'camp', tier: 4 }, 'p-pickaxe'),
   ];
 }

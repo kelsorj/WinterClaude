@@ -1,8 +1,6 @@
-import {
-  SAWMILL_PERIOD, TREE_RESPAWN, TREE_YIELD, TURRET_DMG, TURRET_PERIOD,
-} from '../../content/balance';
+import { SAWMILL_PERIOD, TREE_YIELD, TURRET_DMG, TURRET_PERIOD } from '../../content/balance';
 import { dist, v } from '../math';
-import { killBear } from './harvest';
+import { FELLED, killBear } from './harvest';
 import type { GameState } from '../state';
 
 export function machinesTick(state: GameState, dt: number): void {
@@ -30,7 +28,8 @@ export function machinesTick(state: GameState, dt: number): void {
     );
     if (!tree) { s.timer = 0; continue; }
     s.timer = SAWMILL_PERIOD;
-    tree.respawn = TREE_RESPAWN;
+    tree.respawn = FELLED; // sawmills clear their radius for good, then idle
+
     s.output += TREE_YIELD;
     state.stats.chops++;
     state.events.push({ type: 'treeFall', pos: v(tree.pos.x, tree.pos.z) });

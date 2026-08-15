@@ -26,9 +26,17 @@ export function bearsTick(state: GameState, dt: number): void {
     if (d > BEAR_ATTACK_RANGE) {
       const next = toward(b.pos, p.pos, BEAR_SPEED * dt);
       if (!blockedByZones(state, next)) b.pos = next;
+      else {
+        const xOnly = v(next.x, b.pos.z);
+        const zOnly = v(b.pos.x, next.z);
+        if (!blockedByZones(state, xOnly)) b.pos = xOnly;
+        else if (!blockedByZones(state, zOnly)) b.pos = zOnly;
+      }
     } else if (b.attackCd === 0) {
       b.attackCd = BEAR_ATTACK_CD;
-      p.knockback = add(p.knockback, scale(norm(v(p.pos.x - b.pos.x, p.pos.z - b.pos.z)), BEAR_KNOCKBACK));
+      const kb = add(p.knockback, scale(norm(v(p.pos.x - b.pos.x, p.pos.z - b.pos.z)), BEAR_KNOCKBACK));
+      const mag = Math.hypot(kb.x, kb.z);
+      p.knockback = mag > BEAR_KNOCKBACK * 2 ? scale(kb, (BEAR_KNOCKBACK * 2) / mag) : kb;
       state.events.push({ type: 'playerHit', pos: v(p.pos.x, p.pos.z) });
     }
   }

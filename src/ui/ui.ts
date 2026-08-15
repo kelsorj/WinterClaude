@@ -67,7 +67,12 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
   soundBtn.type = 'button';
   const sound = blankIconCanvas();
   soundBtn.appendChild(sound.canvas);
-  soundBtn.addEventListener('click', () => setMuted(cb.onToggleMute()));
+  soundBtn.addEventListener('click', () => {
+    setMuted(cb.onToggleMute());
+    // Hand the keyboard straight back to the game: a focused button eats Space and Enter, so a
+    // player who clicked the speaker once would toggle audio again the next time they hit Space.
+    soundBtn.blur();
+  });
   hud.appendChild(soundBtn);
   document.body.appendChild(hud);
 

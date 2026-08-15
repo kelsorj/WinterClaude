@@ -1,5 +1,6 @@
 import { PAD_RANGE, PAY_RATE } from '../../content/balance';
 import { dist, v } from '../math';
+import { applyExpansion, escalate } from './expansion';
 import type { GameState, Pad } from '../state';
 
 export function padAvailable(state: GameState, pad: Pad): boolean {
@@ -30,7 +31,11 @@ export function applyEffect(state: GameState, pad: Pad): void {
   else if (e.type === 'carry') state.player.carryCap += e.add;
   else if (e.type === 'camp') state.campTier = Math.max(state.campTier, e.tier);
   else if (e.type === 'distributor') state.distributorActive = true;
-  else activateMachine(state, e.machineId);
+  else if (e.type === 'expedition') {
+    // The ring lands immediately, so the fanfare and the new country arrive together.
+    state.expansions += 1;
+    applyExpansion(state, state.expansions);
+  } else activateMachine(state, e.machineId);
 }
 
 export function padsTick(state: GameState, dt: number): void {
@@ -53,11 +58,18 @@ export function padsTick(state: GameState, dt: number): void {
     pad.paid += pay;
     if (pad.paid >= pad.cost - 1e-9) {
       pad.paid = pad.cost;
-      pad.done = true;
       applyEffect(state, pad);
       // Clear float dust from fractional cash streaming so the HUD's floor() shows the true total.
       state.player.cash = Math.round(state.player.cash * 1e6) / 1e6;
       state.events.push({ type: 'unlock', pos: v(pad.pos.x, pad.pos.z) });
+      if (pad.repeat) {
+        // A repeatable pad is never done — it empties and re-arms at the next price, which is
+        // what keeps it available and keeps late-game cash worth something (Amendment 5B).
+        pad.paid = 0;
+        pad.cost = escalate(pad.cost);
+      } else {
+        pad.done = true;
+      }
     }
   }
 }

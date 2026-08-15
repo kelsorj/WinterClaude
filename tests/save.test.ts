@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../src/game/init';
 import { deserialize, serialize } from '../src/game/save';
+import { applyExpansion, expeditionCost } from '../src/game/systems/expansion';
+import { FELLED } from '../src/game/systems/harvest';
 
 describe('save round-trip', () => {
   it('preserves player, progress and stockpiles', () => {
@@ -196,6 +198,50 @@ describe('save round-trip', () => {
     expect(felled.map((t) => t.id).sort()).toEqual(cut.map((t) => t.id).sort());
     expect(felled.every((t) => t.hp === 0)).toBe(true);
     expect(restored.trees.length - felled.length).toBe(state.trees.length - cut.length);
+  });
+
+  it('replays expedition rings from the count, felled ring trees included', () => {
+    const state = createInitialState();
+    const pad = state.pads.find((p) => p.effect.type === 'expedition')!;
+    applyExpansion(state, 1);
+    applyExpansion(state, 2);
+    state.expansions = 2;
+    pad.cost = expeditionCost(2);
+    pad.paid = 40; // part-paid toward the third expedition
+    const ringTree = state.trees.find((t) => t.id === 'ring2-tree7')!;
+    ringTree.respawn = 1; ringTree.hp = 0;
+    const starterTree = state.trees[0];
+    starterTree.respawn = 1; starterTree.hp = 0;
+
+    const restored = deserialize(serialize(state));
+
+    expect(restored.expansions).toBe(2);
+    expect(restored.trees.length).toBe(state.trees.length);
+    expect(restored.bears.length).toBe(state.bears.length);
+    expect(restored.seams.length).toBe(state.seams.length);
+    // The ring came back in the same places under the same ids, which is what lets a felled
+    // ring tree stay felled — and only the two that were cut are down.
+    expect(restored.trees.map((t) => t.id)).toEqual(state.trees.map((t) => t.id));
+    expect(restored.trees.find((t) => t.id === 'ring2-tree7')?.respawn).toBe(FELLED);
+    expect(restored.trees.filter((t) => t.respawn > 0).map((t) => t.id).sort())
+      .toEqual([starterTree.id, 'ring2-tree7'].sort());
+
+    const restoredPad = restored.pads.find((p) => p.effect.type === 'expedition')!;
+    expect(restoredPad.cost).toBe(512); // priced for the third ring, not re-armed at 200
+    expect(restoredPad.paid).toBe(40);
+    expect(restoredPad.done).toBe(false);
+  });
+
+  it('loads a pre-5B save as an unexpanded world', () => {
+    const state = createInitialState();
+    const legacy = JSON.parse(serialize(state)) as Record<string, unknown>;
+    delete legacy.expansions;
+
+    const restored = deserialize(JSON.stringify(legacy));
+
+    expect(restored.expansions).toBe(0);
+    expect(restored.trees.length).toBe(state.trees.length);
+    expect(restored.pads.find((p) => p.effect.type === 'expedition')?.cost).toBe(200);
   });
 
   it('loads pre-forest saves with a full forest', () => {

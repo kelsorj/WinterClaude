@@ -18,6 +18,7 @@ export function blankState(): GameState {
     campTier: 0,
     distributorActive: false,
     zonesOpen: { start: true, deepforest: false, hunting: false, quarry: false },
+    expansions: 0,
     stats: { chops: 0, bearsKilled: 0, earned: 0 },
     events: [], nextDropId: 1, nextCustomerId: 1,
   };

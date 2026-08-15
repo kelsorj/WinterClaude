@@ -107,6 +107,20 @@ export const MINER_RANGE = 1.6;
  * ever forms. At 12 the road carries a single-file stream (0.6 s apart is ~2.5 units of spacing)
  * and 4-6 shoppers stand waiting at a busy bench, matching the reference frames.
  */
+/**
+ * The expedition pad (Amendment 5B) — the one repeatable pad, and the only thing late-game cash
+ * has left to buy once the eighteen campaign unlocks are done.
+ *
+ * 200 is roughly a Grand Fort's worth of shop takings, so the first expedition lands as the
+ * natural thing to do after the campaign rather than a grind alongside it. The 1.6 escalation
+ * (200 → 320 → 512 → 819 → 1310 …) outruns any fixed income: the benches sell faster as the camp
+ * grows, but not exponentially, so each ring is a longer haul than the last and the pad never
+ * becomes free money. Both are data — the pad's price is `cost × GROWTH` rounded, applied per
+ * completion, and replayed from the expansion count on load.
+ */
+export const EXPEDITION_BASE = 200;
+export const EXPEDITION_GROWTH = 1.6;
+
 export const CUSTOMER_INTERVAL = 0.6;
 export const CUSTOMER_QUEUE_CAP = 12;
 export const CUSTOMER_SPEED = 4.2;

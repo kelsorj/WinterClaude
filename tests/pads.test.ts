@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { padAvailable, padsTick } from '../src/game/systems/pads';
+import { EXPEDITION_BASE } from '../src/content/balance';
+import { worldBounds } from '../src/content/map';
 import { v } from '../src/game/math';
 import { aPad, blankState } from './helpers';
 
@@ -135,5 +137,68 @@ describe('padsTick', () => {
     state.player.cash = 100;
     for (let i = 0; i < 120; i++) padsTick(state, 1 / 60);
     expect(state.player.cash).toBe(90);
+  });
+});
+
+/** The expedition pad — the one pad that is never finished with (Amendment 5B). */
+describe('repeatable pads', () => {
+  const expeditionPad = () =>
+    aPad({ id: 'p-expedition', cost: EXPEDITION_BASE, effect: { type: 'expedition' }, repeat: true });
+
+  it('empties and re-arms at the next price instead of completing', () => {
+    const state = blankState();
+    state.pads.push(expeditionPad());
+    state.player.cash = 200;
+    ticks(state, 20);
+
+    const pad = state.pads[0];
+    expect(pad.done).toBe(false);          // never done, so never off the map
+    expect(padAvailable(state, pad)).toBe(true);
+    expect(pad.paid).toBe(0);              // and empty, ready for the next round
+    expect(pad.cost).toBe(320);
+    expect(state.expansions).toBe(1);
+    expect(state.player.cash).toBe(0);
+  });
+
+  it('escalates 200 → 320 → 512 across three expeditions', () => {
+    const state = blankState();
+    state.pads.push(expeditionPad());
+    const prices: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      prices.push(state.pads[0].cost);
+      state.player.cash = state.pads[0].cost;
+      ticks(state, 60);
+    }
+    expect(prices).toEqual([200, 320, 512]);
+    expect(state.expansions).toBe(3);
+    expect(state.pads[0].cost).toBe(819);
+  });
+
+  it('grows the world and seeds it on every purchase', () => {
+    const state = blankState();
+    state.pads.push(expeditionPad());
+    expect(state.trees).toHaveLength(0);
+
+    state.player.cash = 200;
+    ticks(state, 20);
+    const afterFirst = state.trees.length;
+    expect(afterFirst).toBeGreaterThan(300);
+    expect(state.bears.length).toBeGreaterThanOrEqual(12);
+    expect(state.seams.length).toBeGreaterThanOrEqual(3);
+    // The new country is beyond the old border, which has itself moved out.
+    expect(worldBounds(state.expansions).x1).toBeGreaterThan(worldBounds(0).x1);
+
+    state.player.cash = 320;
+    ticks(state, 40);
+    expect(state.expansions).toBe(2);
+    expect(state.trees.length).toBeGreaterThan(afterFirst);
+  });
+
+  it('announces each expedition, so the fanfare fires every time', () => {
+    const state = blankState();
+    state.pads.push(expeditionPad());
+    state.player.cash = 520;
+    ticks(state, 60);
+    expect(state.events.filter((e) => e.type === 'unlock')).toHaveLength(2);
   });
 });

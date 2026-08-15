@@ -1,3 +1,4 @@
+import { EXPEDITION_BASE } from './balance';
 import { dist, inRect, makeRng, v, type Rect, type Vec2 } from '../game/math';
 import type { GateZone, Pad, Rail, Sawmill, SellStation, Turret, ZoneId } from '../game/state';
 
@@ -5,8 +6,25 @@ import type { GateZone, Pad, Rail, Sawmill, SellStation, Turret, ZoneId } from '
  * The 10× world (Amendment 3B). Everything the campaign is made of — camp, road, gated zones,
  * rails, fences — stays exactly where it was authored, inside `ORIGINAL_MAP`; these bounds add
  * open snowy wilderness in a ring around it.
+ *
+ * Since Amendment 5B this is only ring 0 — the world the campaign starts in. Expeditions push
+ * the border out from here, so anything that clamps to the edge of the world must ask
+ * `worldBounds(state.expansions)` rather than reading this. It stays the authoring frame: the
+ * starter wilderness scatter below, and every ring's inner edge, are measured against it.
  */
 export const WORLD_BOUNDS: Rect = { x0: -190, z0: -125, x1: 190, z1: 125 };
+
+/** How far each expedition pushes the world border out, on every side (Amendment 5B). */
+export const RING_WIDTH = 30;
+
+/** The walkable world after `expansions` expeditions. Ring 0 is `WORLD_BOUNDS` exactly. */
+export function worldBounds(expansions: number): Rect {
+  const grow = RING_WIDTH * Math.max(0, Math.floor(expansions));
+  return {
+    x0: WORLD_BOUNDS.x0 - grow, z0: WORLD_BOUNDS.z0 - grow,
+    x1: WORLD_BOUNDS.x1 + grow, z1: WORLD_BOUNDS.z1 + grow,
+  };
+}
 
 /** The area the campaign occupies. Wilderness scatter fills in around it, never inside it. */
 export const ORIGINAL_MAP: Rect = { x0: -60, z0: -40, x1: 60, z1: 40 };
@@ -97,6 +115,130 @@ export function treeDefs(): { pos: Vec2; zone: ZoneId }[] {
     for (const z of [8.5, 18.5, 29.5])
       defs.push({ zone: 'hunting', pos: v(32 + i * 6 + rng() * 1.2, z + rng() * 1.2) });
   defs.push(...scatterWilderness(makeRng(1337), 5.0, 3.2));
+  return defs;
+}
+
+// ---------------------------------------------------------------------------
+// Expedition rings (Amendment 5B)
+// ---------------------------------------------------------------------------
+
+/**
+ * Ring content is generated, never stored: a save carries only how many expeditions were bought,
+ * and `ringDefs` rebuilds each ring's trees, bears and seams identically from a seed keyed by the
+ * ring index. That is what lets felled ring trees persist — their ids are stable because the
+ * layout they are drawn from is.
+ *
+ * Ring seeds are spread with Knuth's multiplicative hash rather than being `base + ring`: the
+ * LCG behind `makeRng` starts its sequence very close together for adjacent seeds, so
+ * consecutive rings would have come out looking like near-copies of each other.
+ */
+const RING_SEED_MULT = 2654435761;
+
+/**
+ * Trees per ring, drawn from the band's area. The band grows every expedition (~41k units² at
+ * ring 1, ~63k by ring 4), so the count grows with it and is then clamped: rings would otherwise
+ * get steadily more expensive to generate and draw for no gameplay reason.
+ *
+ * The density is deliberately well below the starter wilderness's (25 units²/tree). At that
+ * density a ring would seed ~1,650 trees and two expeditions would double the whole forest; the
+ * amendment's per-ring budget is 300-500, so a new ring reads as thinner country than the
+ * original wilderness. That trade is on purpose — the instanced forest carries the scale, but it
+ * is rebuilt whole on every expansion, so a ring is kept to something the rebuild can swallow.
+ */
+const RING_AREA_PER_TREE = 100;
+const RING_TREES_MIN = 300;
+const RING_TREES_MAX = 500;
+
+/** Bears come in packs of this size, 3-4 packs to a ring — 12-16 bears of new territory. */
+const RING_PACK_SIZE = 4;
+/** How far a pack's members scatter from its home, in each axis. */
+const RING_PACK_SPREAD = 8;
+
+const area = (r: Rect): number => (r.x1 - r.x0) * (r.z1 - r.z0);
+const inset = (r: Rect, m: number): Rect =>
+  ({ x0: r.x0 + m, z0: r.z0 + m, x1: r.x1 - m, z1: r.z1 - m });
+
+function ringTreeCount(ring: number): number {
+  const band = area(worldBounds(ring)) - area(worldBounds(ring - 1));
+  return Math.min(RING_TREES_MAX, Math.max(RING_TREES_MIN, Math.round(band / RING_AREA_PER_TREE)));
+}
+
+/**
+ * One uniform point in the band between `hole` and `box`, kept `clear` of the road.
+ *
+ * The band is sampled arm by arm — north, south, west, east — weighted by area, rather than by
+ * rejecting points drawn from the whole rect. The band is a thinner and thinner sliver of the
+ * world as rings accumulate (30% of it at ring 1, under 4% by ring 50), so rejection sampling
+ * would get slower with every expedition; this is exact and constant-time whatever the ring is.
+ * Only the west and east arms span the road at all, so only they retry.
+ */
+function bandPoint(rng: () => number, box: Rect, hole: Rect, clear: number): Vec2 {
+  const arms: { rect: Rect; road: boolean }[] = [
+    { rect: { x0: box.x0, z0: box.z0, x1: box.x1, z1: hole.z0 }, road: false },
+    { rect: { x0: box.x0, z0: hole.z1, x1: box.x1, z1: box.z1 }, road: false },
+    { rect: { x0: box.x0, z0: hole.z0, x1: hole.x0, z1: hole.z1 }, road: true },
+    { rect: { x0: hole.x1, z0: hole.z0, x1: box.x1, z1: hole.z1 }, road: true },
+  ];
+  const areas = arms.map((a) => Math.max(0, a.rect.x1 - a.rect.x0) * Math.max(0, a.rect.z1 - a.rect.z0));
+  let pick = rng() * areas.reduce((sum, a) => sum + a, 0);
+  let idx = arms.length - 1;
+  for (let i = 0; i < arms.length; i++) {
+    if (pick < areas[i]) { idx = i; break; }
+    pick -= areas[i];
+  }
+  const { rect, road } = arms[idx];
+  const spanX = rect.x1 - rect.x0, spanZ = rect.z1 - rect.z0;
+  for (let i = 0; i < 50; i++) {
+    const p = v(rect.x0 + rng() * spanX, rect.z0 + rng() * spanZ);
+    if (road && Math.abs(p.z) < clear) continue;
+    return p;
+  }
+  // Only reachable in a west/east arm, and only if fifty draws all landed on the road. Park the
+  // point just off the verge rather than on it.
+  return v(rect.x0 + rng() * spanX, clear);
+}
+
+export interface RingDefs {
+  trees: { pos: Vec2; zone: ZoneId }[];
+  bears: { pos: Vec2; zone: ZoneId }[];
+  seams: { pos: Vec2; zone: ZoneId }[];
+}
+
+/**
+ * Everything ring `ring` (1-based) adds to the world: open-country trees, bear packs and gold
+ * outcrops in the new band only. All of it is zone 'start' — an expedition opens country, it does
+ * not add gates — so none of it can land inside a gated rect, which lives back in `ORIGINAL_MAP`.
+ *
+ * The margins are what keep pack members honest: a home is drawn 6 units clear of both the
+ * previous ring and the road, and members scatter at most 4 from it, so every bear still lands in
+ * the band and off the road without a second test.
+ */
+export function ringDefs(ring: number): RingDefs {
+  const rng = makeRng(ring * RING_SEED_MULT);
+  const outer = worldBounds(ring);
+  const prev = worldBounds(ring - 1);
+  const grow = (m: number): Rect => inset(prev, -m);
+  const defs: RingDefs = { trees: [], bears: [], seams: [] };
+  for (let i = 0; i < ringTreeCount(ring); i++) {
+    defs.trees.push({ zone: 'start', pos: bandPoint(rng, inset(outer, 2), prev, ROAD_CLEAR) });
+  }
+  const packs = 3 + Math.floor(rng() * 2);
+  for (let p = 0; p < packs; p++) {
+    const home = bandPoint(rng, inset(outer, 6), grow(6), ROAD_CLEAR + 6);
+    for (let i = 0; i < RING_PACK_SIZE; i++) {
+      defs.bears.push({
+        zone: 'start',
+        pos: v(
+          home.x + (rng() - 0.5) * RING_PACK_SPREAD,
+          home.z + (rng() - 0.5) * RING_PACK_SPREAD,
+        ),
+      });
+    }
+  }
+  const seams = 3 + Math.floor(rng() * 2);
+  for (let i = 0; i < seams; i++) {
+    defs.seams.push({ zone: 'start', pos: bandPoint(rng, inset(outer, 3), grow(3), ROAD_CLEAR + 3) });
+  }
   return defs;
 }
 
@@ -277,8 +419,8 @@ export function railDefs(): Rail[] {
 export function padDefs(): Pad[] {
   const p = (
     id: string, pos: Vec2, currency: Pad['currency'], cost: number,
-    effect: Pad['effect'], requires?: string,
-  ): Pad => ({ id, pos, currency, cost, paid: 0, done: false, effect, requires, payTimer: 0 });
+    effect: Pad['effect'], requires?: string, repeat?: boolean,
+  ): Pad => ({ id, pos, currency, cost, paid: 0, done: false, effect, requires, payTimer: 0, repeat });
   // The camp pads ring the depot yard; everything else hangs off the chain that grows the camp:
   // camp1 → axe → {carry1, speed1, gate-deep} → camp2 → {turret1, sawmill1} → scythe → camp3 →
   // {gate-hunt, distributor} → turret2, and sawmill1 → gate-quarry → pickaxe →
@@ -304,5 +446,12 @@ export function padDefs(): Pad[] {
     p('p-carry2',     v(-10, 4),   'gold', 8,  { type: 'carry', add: 24 }, 'p-pickaxe'),
     p('p-speed2',     v(-16, 4),   'gold', 10, { type: 'speed', mult: 1.3 }, 'p-pickaxe'),
     p('p-camp4',      v(15, 6),    'gold', 12, { type: 'camp', tier: 4 }, 'p-pickaxe'),
+    // The one repeatable pad (Amendment 5B). It mirrors the distributor across the road, off the
+    // fort's south-west corner: outside `CAMP_FOOTPRINT`, south of the shoppers' corridor (which
+    // threads z ∈ [-6.75, -4.55] on its way to the gold bench), and inside the south fence's
+    // depot gap, so the player walks past it coming and going from the camp. It hangs off the
+    // Fort rather than standing open from the first frame — an expedition is what a camp mounts
+    // once it is a camp, and the price is priced for a late-game economy.
+    p('p-expedition', v(20, -9.5), 'cash', EXPEDITION_BASE, { type: 'expedition' }, 'p-camp3', true),
   ];
 }

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../src/game/init';
-import { MINER_CAMP_TIER, PAD_RANGE, SELL_RATE, TREE_YIELD } from '../src/content/balance';
+import {
+  EXPEDITION_BASE, MINER_CAMP_TIER, PAD_RANGE, SELL_RATE, TREE_YIELD,
+} from '../src/content/balance';
 import type { ZoneId } from '../src/game/state';
-import { ORIGINAL_MAP, WORLD_BOUNDS, ZONE_RECTS } from '../src/content/map';
+import { CAMP_FOOTPRINT, ORIGINAL_MAP, WORLD_BOUNDS, ZONE_RECTS } from '../src/content/map';
 import { dist, inRect } from '../src/game/math';
 
 describe('createInitialState', () => {
@@ -12,7 +14,10 @@ describe('createInitialState', () => {
     // The 10× world (Amendment 3B): a wilderness ring on top of the original map's stands.
     expect(state.trees.length).toBeGreaterThanOrEqual(2400); // finite forest: no respawns
     expect(state.trees.length).toBeLessThanOrEqual(3500);    // and an instanced-draw budget
-    expect(state.pads.length).toBe(18);
+    // Eighteen one-shot campaign unlocks plus the repeatable expedition (Amendment 5B).
+    expect(state.pads.length).toBe(19);
+    expect(state.pads.filter((p) => p.repeat)).toHaveLength(1);
+    expect(state.expansions).toBe(0);
     expect(state.bears.length).toBeGreaterThanOrEqual(55);
     expect(state.seams.length).toBeGreaterThanOrEqual(18);
     // The snowfield of rescuable villagers is gone (Amendment 4C): the fort's own staff is all
@@ -189,6 +194,21 @@ describe('createInitialState', () => {
       if (pad.effect.type !== 'gate') continue;
       expect(inRect(pad.pos, ZONE_RECTS[pad.effect.zone as keyof typeof ZONE_RECTS])).toBe(false);
     }
+  });
+
+  it('offers exactly one expedition, priced and placed for a working camp', () => {
+    const pads = state.pads.filter((p) => p.effect.type === 'expedition');
+    expect(pads).toHaveLength(1);
+    const pad = pads[0];
+    expect(pad.id).toBe('p-expedition');
+    expect(pad.repeat).toBe(true);
+    expect(pad.currency).toBe('cash');
+    expect(pad.cost).toBe(EXPEDITION_BASE);
+    expect(pad.requires).toBe('p-camp3'); // the Fort mounts expeditions; a bare clearing does not
+    // Near the fort but not on it, and south of the corridor the gold bench's shoppers walk.
+    expect(dist(pad.pos, state.depotPos)).toBeLessThan(12);
+    expect(inRect(pad.pos, CAMP_FOOTPRINT)).toBe(false);
+    expect(pad.pos.z).toBeLessThan(-6.75);
   });
 
   it('every pad has a positive cost', () => {

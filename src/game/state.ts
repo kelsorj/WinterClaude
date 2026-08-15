@@ -66,12 +66,18 @@ export type UnlockEffect =
   | { type: 'speed'; mult: number }
   | { type: 'carry'; add: number }
   | { type: 'camp'; tier: number }
-  | { type: 'distributor' };
+  | { type: 'distributor' }
+  | { type: 'expedition' };
 
 export interface Pad {
   id: string; pos: Vec2; currency: Currency; cost: number;
   paid: number; done: boolean; effect: UnlockEffect; requires?: string;
   payTimer: number;
+  /**
+   * A repeatable pad never completes (Amendment 5B): on payment it applies its effect, then
+   * empties itself and raises its own price for the next round. Only the expedition pad is one.
+   */
+  repeat?: boolean;
 }
 
 export interface Turret { id: string; pos: Vec2; range: number; cd: number; active: boolean; output: number }
@@ -134,6 +140,12 @@ export interface GameState {
   /** Whether the fort's hand-off crew has been hired; derived from the distributor pad on load. */
   distributorActive: boolean;
   zonesOpen: Record<ZoneId, boolean>;
+  /**
+   * How many expedition rings have been bought (Amendment 5B). This one number is the whole of
+   * the world's size: `worldBounds(expansions)` is the walkable rect, and each ring's content is
+   * regenerated deterministically from its index rather than saved.
+   */
+  expansions: number;
   /**
    * Lifetime totals. Since Amendment 5A there is no ending for these to be the epitaph of — the
    * game is an infinite sandbox — so they are simply a running record, shown in the pause menu.

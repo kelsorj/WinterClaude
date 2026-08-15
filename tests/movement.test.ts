@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { intentFrom, type InputState } from '../src/game/input';
 import { movePlayer } from '../src/game/systems/movement';
-import { WORLD_BOUNDS, ZONE_RECTS } from '../src/content/map';
+import { WORLD_BOUNDS, ZONE_RECTS, worldBounds } from '../src/content/map';
 import { inRect, v } from '../src/game/math';
 import { blankState } from './helpers';
 
@@ -71,6 +71,23 @@ describe('movePlayer', () => {
     expect(state.player.pos.x).toBe(WORLD_BOUNDS.x1);
     movePlayer(state, v(0, -1), 100);
     expect(state.player.pos.z).toBe(WORLD_BOUNDS.z0);
+  });
+
+  /**
+   * The border is not a constant since Amendment 5B — it is where the expeditions have pushed it.
+   * A player standing on the old edge must be able to walk straight out into the new ring.
+   */
+  it('clamps to the expanded border after an expedition, not the old one', () => {
+    const state = blankState();
+    state.expansions = 2;
+    state.player.pos = v(WORLD_BOUNDS.x1, 0);
+    movePlayer(state, v(1, 0), 3);
+    expect(state.player.pos.x).toBeGreaterThan(WORLD_BOUNDS.x1);
+
+    movePlayer(state, v(1, 0), 100);
+    expect(state.player.pos.x).toBe(worldBounds(2).x1);
+    movePlayer(state, v(0, -1), 100);
+    expect(state.player.pos.z).toBe(worldBounds(2).z0);
   });
 
   // Since the 10× world this is a zone's edge rather than the map's — the gated rects now sit in

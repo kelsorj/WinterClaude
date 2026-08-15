@@ -1,5 +1,5 @@
 import { add, dist, inRect, norm, scale, v, type Rect, type Vec2 } from '../math';
-import { WORLD_BOUNDS, ZONE_RECTS } from '../../content/map';
+import { ZONE_RECTS, worldBounds } from '../../content/map';
 import type { GameState, ZoneId } from '../state';
 
 export function blockedByZones(state: GameState, q: Vec2): boolean {
@@ -33,8 +33,11 @@ export function movePlayer(state: GameState, intent: Vec2, dt: number): void {
   if (dir.x !== 0 || dir.z !== 0) p.facing = dir;
   const step = add(scale(dir, p.speed * dt), scale(p.knockback, dt));
   p.knockback = scale(p.knockback, Math.max(0, 1 - 6 * dt));
-  const clampX = (x: number) => Math.min(WORLD_BOUNDS.x1, Math.max(WORLD_BOUNDS.x0, x));
-  const clampZ = (z: number) => Math.min(WORLD_BOUNDS.z1, Math.max(WORLD_BOUNDS.z0, z));
+  // The border moves outward with every expedition (Amendment 5B), so it is read per tick rather
+  // than baked in: this is the only thing standing between the player and the edge of the world.
+  const bounds = worldBounds(state.expansions);
+  const clampX = (x: number) => Math.min(bounds.x1, Math.max(bounds.x0, x));
+  const clampZ = (z: number) => Math.min(bounds.z1, Math.max(bounds.z0, z));
   // If a stale save ever restores a position inside a sealed zone, let the player walk out.
   const stuck = blockedByZones(state, p.pos);
   let next = v(clampX(p.pos.x + step.x), p.pos.z);

@@ -333,9 +333,13 @@ export function makeBubbleLabel(kind: Currency, count: number): THREE.Sprite {
   return sprite(bubbleTexture(kind, count), 2.9, 2.9);
 }
 
-/** Unlock pad: a grey rounded card carrying the drawn icon and the price. */
-export function makePadLabel(kind: Currency, price: number): THREE.Sprite {
-  const tex = labelTexture(`pad|${kind}|${price}`, 256, 128, (ctx) => {
+/**
+ * Unlock pad card: a grey rounded card carrying the drawn icon and the price. Split out from
+ * `makePadLabel` because the expedition pad's price climbs with every purchase (Amendment 5B),
+ * so the renderer has to repaint a live pad's card the way it repaints a bench's bubble.
+ */
+export function padLabelTexture(kind: Currency, price: number): THREE.CanvasTexture {
+  return labelTexture(`pad|${kind}|${price}`, 256, 128, (ctx) => {
     ctx.fillStyle = '#e9edf2';
     ctx.strokeStyle = '#9aa6b4';
     ctx.lineWidth = 7;
@@ -347,7 +351,10 @@ export function makePadLabel(kind: Currency, price: number): THREE.Sprite {
     ctx.textBaseline = 'middle';
     ctx.fillText(String(price), 106, 67);
   });
-  return sprite(tex, 3.0, 1.5);
+}
+
+export function makePadLabel(kind: Currency, price: number): THREE.Sprite {
+  return sprite(padLabelTexture(kind, price), 3.0, 1.5);
 }
 
 /** Plain white card used for the camp nameplate and non-commodity floats. */

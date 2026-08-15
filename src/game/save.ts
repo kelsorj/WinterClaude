@@ -1,4 +1,5 @@
 import { createInitialState } from './init';
+import { applyExpansion, expeditionCost } from './systems/expansion';
 import { FELLED } from './systems/harvest';
 import { activateMachine } from './systems/pads';
 import type { GameState, ZoneId } from './state';
@@ -7,6 +8,11 @@ const KEY = 'frostfall-save-v1';
 
 interface SaveData {
   time: number;
+  /**
+   * How many expedition rings were bought. The rings' content is not saved: it is regenerated
+   * from this count on load, which is only sound because `ringDefs` is deterministic.
+   */
+  expansions: number;
   player: GameState['player'];
   padsDone: string[];
   padsPaid: Record<string, number>;
@@ -38,6 +44,7 @@ function conservedDepot(state: GameState): GameState['depot'] {
 export function serialize(state: GameState): string {
   const data: SaveData = {
     time: state.time,
+    expansions: state.expansions,
     player: state.player,
     padsDone: state.pads.filter((p) => p.done).map((p) => p.id),
     padsPaid: Object.fromEntries(state.pads.filter((p) => !p.done && p.paid > 0).map((p) => [p.id, p.paid])),
@@ -78,7 +85,16 @@ export function deserialize(json: string, previous?: GameState): GameState {
   // field is simply read past: a camp that "finished" under the old rules just keeps going.
   state.player = { ...state.player, ...data.player };
   state.zonesOpen = { ...state.zonesOpen, ...data.zonesOpen };
+  // Rings first, before anything overlays saved state onto the world: ring trees have to be in
+  // `state.trees` before the felled list below can find them, and the expedition pad's price has
+  // to be re-derived before its part-payment is restored. Saves written before Amendment 5B have
+  // no count at all and load as the ring-0 world they were saved from.
+  state.expansions = Math.max(0, Math.floor(data.expansions ?? 0));
+  for (let ring = 1; ring <= state.expansions; ring++) applyExpansion(state, ring);
   for (const pad of state.pads) {
+    // The repeatable pad's price is a function of the ring count, not a stored number: it is
+    // replayed with the same rounding the live escalation uses.
+    if (pad.effect.type === 'expedition') pad.cost = expeditionCost(state.expansions);
     if (data.padsDone.includes(pad.id)) { pad.done = true; pad.paid = pad.cost; }
   }
   for (const pad of state.pads) {

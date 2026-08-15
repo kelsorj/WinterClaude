@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TOOLS } from '../content/balance';
-import { WORLD_BOUNDS, ZONE_RECTS, queueLaneX } from '../content/map';
+import { WORLD_BOUNDS, ZONE_RECTS, queueLaneX, worldBounds } from '../content/map';
 import { cartPos, railActive } from '../game/systems/carts';
 import { padAvailable } from '../game/systems/pads';
 import { hash01 } from '../game/math';
@@ -14,7 +14,7 @@ import {
   makeBench, makeCampTier, makeCarryBox, makeCart, makeCrate, makeCustomer, makeDropMesh,
   makeFenceRun, makeGateWall, makeIconTextLabel, makeMatMesh, makePadLabel, makePadMesh,
   makePileStack, makePlayer, makeRailMesh, makeRock, makeSawmill, makeSeam, makeSlab,
-  makeBubbleLabel, makeTextLabel, makeTool, makeTurret, makeVillager, refsOf,
+  makeBubbleLabel, makeTextLabel, makeTool, makeTurret, makeVillager, padLabelTexture, refsOf,
   snowflakeTexture, treeGeometries, treeMaterial,
 } from './meshes';
 
@@ -40,6 +40,13 @@ const FENCE_FROM = -44, FENCE_TO = 44;
 const SNOW_HALF = 42, SNOW_TOP = 26;
 /** How far the ground slab runs past the walkable bounds — beyond the fog's far plane. */
 const GROUND_MARGIN = 110;
+/**
+ * Fog, as a function of how far the world reaches. It opens up modestly with each expedition —
+ * enough that a bigger world reads as bigger rather than as the same clearing in the same haze —
+ * but stays inside the camera's 300-unit far plane, past which there is nothing to fade to.
+ */
+const FOG_FAR_BASE = 200, FOG_FAR_PER_RING = 12, FOG_FAR_CAP = 280;
+const FOG_NEAR_FRACTION = 0.45;
 
 /**
  * What a tree's instance pair is currently showing. Both instanced meshes hold an entry for
@@ -115,6 +122,12 @@ export class Renderer {
   private stumpTrees: THREE.InstancedMesh | null = null;
   private treeIndex = new Map<string, number>();
   private treeVisual = new Uint8Array(0);
+  /** Ground, road and verges as one swappable group — they are sized off the world bounds. */
+  private groundGroup: THREE.Group | null = null;
+  /** The expansion count the ground and fog were last built for; -1 until the first build. */
+  private builtExpansions = -1;
+  /** Last price drawn on each pad's card, so a repeatable pad's card can be repainted. */
+  private padCosts = new Map<string, number>();
   private floats: FloatingText[] = [];
   private snowLayers: THREE.Points[] = [];
   private target = new THREE.Vector3();
@@ -162,9 +175,6 @@ export class Renderer {
 
   private buildWorld(): void {
     this.scene.background = new THREE.Color(0xe6f1fa);
-    // Pushed out for the 10× world: at the old 70/160 the wilderness dissolved into haze barely
-    // past the camp, which read as a small map in a fog bank rather than a big one.
-    this.scene.fog = new THREE.Fog(0xe6f1fa, 90, 200);
     // Cool sky bounce over warm snow-lit ground, plus a warm key that actually casts. The fill
     // is kept well under the key so shadows stay legible instead of washing out.
     this.scene.add(new THREE.HemisphereLight(0xdcefff, 0xc9b08e, 0.52));
@@ -181,25 +191,48 @@ export class Renderer {
     this.scene.add(sun, sun.target);
     this.sun = sun;
 
-    // Sized off the world bounds plus a margin wide enough that the ground's own edge is out
-    // past the fog when you stand at the far corner: walking to the boundary should read as
-    // country receding into haze, not as the lip of a table. Two triangles either way.
-    const worldW = (WORLD_BOUNDS.x1 - WORLD_BOUNDS.x0) + GROUND_MARGIN * 2;
-    const worldD = (WORLD_BOUNDS.z1 - WORLD_BOUNDS.z0) + GROUND_MARGIN * 2;
+    this.buildGround(0);
+    this.buildProps();
+    this.buildSnow();
+  }
+
+  /**
+   * The ground slab, the road and its verges, sized to the world at `expansions` rings — plus the
+   * fog that has to reach as far. All four are plain slabs with no state of their own, so an
+   * expedition simply throws the group away and builds a bigger one; that happens on a purchase
+   * or a load, never in a steady frame.
+   *
+   * The margin is wide enough that the ground's own edge is out past the fog when you stand at
+   * the far corner: walking to the boundary should read as country receding into haze, not as the
+   * lip of a table. Two triangles either way.
+   */
+  private buildGround(expansions: number): void {
+    if (this.groundGroup) {
+      this.scene.remove(this.groundGroup);
+      disposeSubtree(this.groundGroup);
+    }
+    this.builtExpansions = expansions;
+    const bounds = worldBounds(expansions);
+    const worldW = (bounds.x1 - bounds.x0) + GROUND_MARGIN * 2;
+    const worldD = (bounds.z1 - bounds.z0) + GROUND_MARGIN * 2;
+    const group = new THREE.Group();
     const ground = setShadow(makeSlab(worldW, 0.1, worldD, COLORS.snow), false, true);
     ground.position.y = -0.05;
-    this.scene.add(ground);
-    // The road runs the full width of the 10× world (Amendment 3B), not just the camp's stretch.
+    group.add(ground);
+    // The road runs the full width of the world (Amendment 3B), not just the camp's stretch —
+    // and since Amendment 5B "the full width" is a moving target.
     const road = setShadow(makeSlab(worldW, 0.06, ROAD_Z * 2, COLORS.road), false, true);
     road.position.y = 0.01;
-    this.scene.add(road);
+    group.add(road);
     for (const sz of [-1, 1]) {
       const edge = makeSlab(worldW, 0.05, 0.9, COLORS.roadEdge);
       edge.position.set(0, 0.025, sz * (ROAD_Z - 0.45));
-      this.scene.add(edge);
+      group.add(edge);
     }
-    this.buildProps();
-    this.buildSnow();
+    this.groundGroup = group;
+    this.scene.add(group);
+    const far = Math.min(FOG_FAR_CAP, FOG_FAR_BASE + FOG_FAR_PER_RING * expansions);
+    this.scene.fog = new THREE.Fog(0xe6f1fa, far * FOG_NEAR_FRACTION, far);
   }
 
   /** Boulders and crates dressing the roadside; deterministic so screenshots stay comparable. */
@@ -417,8 +450,29 @@ export class Renderer {
     stumps.instanceMatrix.needsUpdate = true;
   }
 
+  /**
+   * Tear the forest down and build it again at the current tree count. Only the per-instance
+   * matrix buffers belong to these meshes — the two merged tree geometries and their material are
+   * SHARED and outlive them — so `dispose()` is the whole teardown.
+   *
+   * This runs when an expedition seeds a new ring, and when a save loads one: rare, and never in
+   * a steady frame, which is what makes rebuilding the entire forest an acceptable way to grow it.
+   */
+  private rebuildForest(state: GameState): void {
+    for (const inst of [this.standingTrees, this.stumpTrees]) {
+      if (!inst) continue;
+      this.scene.remove(inst);
+      inst.dispose();
+    }
+    this.standingTrees = null;
+    this.stumpTrees = null;
+    this.buildForest(state);
+  }
+
   /** Build once-per-game meshes from state (stations, pads, machines, rails, gates, fences). */
   buildStatic(state: GameState): void {
+    // A save can hand us a world several rings wider than the one the constructor built.
+    if (state.expansions !== this.builtExpansions) this.buildGround(state.expansions);
     this.buildForest(state);
     for (const st of state.stations) {
       const bench = setShadow(makeBench(), true);
@@ -442,6 +496,8 @@ export class Renderer {
       const label = makePadLabel(pad.currency, pad.cost);
       label.position.y = 2.2;
       g.add(label);
+      g.userData.label = label;
+      this.padCosts.set(pad.id, pad.cost);
       this.meshes.set(pad.id, g);
       this.scene.add(g);
     }
@@ -489,7 +545,10 @@ export class Renderer {
     this.gates.clear();
     this.stationBubbles.clear();
     this.lastStock.clear();
+    this.padCosts.clear();
     this.snowLayers = [];
+    this.groundGroup = null;
+    this.builtExpansions = -1;
     this.hitFlash = 0;
   }
 
@@ -515,6 +574,11 @@ export class Renderer {
 
   sync(state: GameState, dt: number): void {
     this.t += dt;
+    // An expedition moves the border and seeds a ring in a single tick, so both the ground the
+    // world is drawn on and the instanced forest can be a frame out of date. Bears and seams from
+    // the new ring need no such handling — `ensure` mints their meshes the moment they appear.
+    if (state.expansions !== this.builtExpansions) this.buildGround(state.expansions);
+    if (state.trees.length !== this.treeVisual.length) this.rebuildForest(state);
     this.syncPlayer(state, dt);
     this.syncTrees(state);
     for (const seam of state.seams) {
@@ -573,6 +637,12 @@ export class Renderer {
       m.visible = padAvailable(state, pad);
       const f = Math.max(pad.paid / pad.cost, 0.001);
       refsOf<PadRefs>(m).progress.scale.set(f, 1, f);
+      // A repeatable pad re-arms at a higher price, so its card is not build-time constant.
+      // Repainted only on the change, like a bench bubble — a 256² canvas per frame is not free.
+      if (this.padCosts.get(pad.id) !== pad.cost) {
+        this.padCosts.set(pad.id, pad.cost);
+        (m.userData.label as THREE.Sprite).material.map = padLabelTexture(pad.currency, pad.cost);
+      }
     }
     for (const st of state.stations) {
       this.syncPile(`cash-${st.id}`, st.matPos.x, st.matPos.z, st.matCash, COLORS.cash, 10, 24, 0.07);

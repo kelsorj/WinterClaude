@@ -43,7 +43,11 @@ interface FenceGap { x: number; z: number; half: number }
 function disposeSubtree(root: THREE.Object3D): void {
   root.traverse((obj) => {
     const withGeo = obj as Partial<THREE.Mesh>;
-    if (withGeo.geometry && !SHARED.has(withGeo.geometry)) withGeo.geometry.dispose();
+    // Every THREE.Sprite draws off one module-level geometry owned by three.js itself. It is not
+    // in SHARED and it is not ours to free — disposing it would pull the buffer out from under
+    // every other live sprite in the scene.
+    const isSprite = (obj as Partial<THREE.Sprite>).isSprite === true;
+    if (withGeo.geometry && !isSprite && !SHARED.has(withGeo.geometry)) withGeo.geometry.dispose();
     const raw = (obj as Partial<THREE.Mesh>).material;
     if (!raw) return;
     for (const mat of Array.isArray(raw) ? raw : [raw]) {
@@ -105,7 +109,11 @@ export class Renderer {
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
     this.clearScene();
+    this.webgl.domElement.parentNode?.removeChild(this.webgl.domElement);
     this.webgl.dispose();
+    // dispose() releases three's own objects but leaves the live context; without this the
+    // browser keeps the WebGL context alive until GC, and contexts are a hard-capped resource.
+    this.webgl.forceContextLoss();
   }
 
   private buildWorld(): void {
@@ -138,9 +146,11 @@ export class Renderer {
       edge.position.set(0, 0.025, sz * (ROAD_Z - 0.45));
       this.scene.add(edge);
     }
-    // Carved trenches the frozen villagers stand in, as in the ad's snowfield.
+    // Carved trenches the frozen villagers stand in, as in the ad's snowfield. They sit above
+    // the ground slab, so they have to receive shadows themselves or the villagers standing in
+    // them appear to cast onto nothing.
     for (let row = 0; row < 5; row++) {
-      const trench = makeSlab(40, 0.04, 2.8, COLORS.trench);
+      const trench = setShadow(makeSlab(40, 0.04, 2.8, COLORS.trench), false, true);
       trench.position.set(-26, 0.02, 12 + row * 5);
       this.scene.add(trench);
     }
@@ -155,7 +165,7 @@ export class Renderer {
       [-42, -9.8, 0.95], [40, -10.8, 1.05], [-6, -11.2, 0.7], [4, 10.8, 0.85],
     ];
     for (const [x, z, s] of rocks) {
-      const rock = makeRock();
+      const rock = setShadow(makeRock(), true, true);
       rock.position.set(x, 0, z);
       rock.scale.setScalar(s);
       rock.rotation.y = hash01(`rock${x}${z}`) * Math.PI * 2;
@@ -241,15 +251,20 @@ export class Renderer {
    * fence is emitted as runs between them.
    */
   private buildFences(state: GameState): void {
-    const gaps: FenceGap[] = [];
+    // Shared across both edges. The camp is entered from either side of the road, so it
+    // contributes a gap on each edge at its own z — an entry at the camp's centre (z = 0) would
+    // be filtered out as too far from both fence lines and open nothing.
+    const common: FenceGap[] = [];
     for (const st of state.stations) {
-      gaps.push({ x: st.pos.x, z: st.pos.z, half: 2.2 });
-      gaps.push({ x: st.matPos.x, z: st.matPos.z, half: 2.0 });
+      common.push({ x: st.pos.x, z: st.pos.z, half: 2.2 });
+      common.push({ x: st.matPos.x, z: st.matPos.z, half: 2.0 });
     }
-    for (const pad of state.pads) gaps.push({ x: pad.pos.x, z: pad.pos.z, half: 2.8 });
-    gaps.push({ x: state.depotPos.x, z: state.depotPos.z, half: 7.5 });
+    for (const pad of state.pads) common.push({ x: pad.pos.x, z: pad.pos.z, half: 2.8 });
     for (const sz of [-1, 1]) {
       const fenceZ = sz * ROAD_Z;
+      // Built fresh per edge: appending to one shared array leaked the -Z edge's rail crossings
+      // into the +Z edge's gap set.
+      const gaps: FenceGap[] = [...common, { x: state.depotPos.x, z: fenceZ, half: 7.5 }];
       for (const rail of state.rails)
         for (const x of Renderer.crossings(rail.points, fenceZ)) gaps.push({ x, z: fenceZ, half: 1.8 });
       const blocked = gaps
@@ -257,21 +272,30 @@ export class Renderer {
         .map((g) => [g.x - g.half, g.x + g.half] as [number, number])
         .sort((a, b) => a[0] - b[0]);
       const line = new THREE.Group();
+      // Runs shorter than one picket produce nothing; adding those empty groups just grows the
+      // scene graph the renderer walks every frame.
+      const addRun = (a: number, b: number): void => {
+        const run = makeFenceRun(a, b, 'x', fenceZ);
+        if (run.children.length > 0) line.add(run);
+      };
       let cursor = FENCE_FROM;
       for (const [b0, b1] of blocked) {
         if (b1 <= cursor) continue;
         if (b0 >= FENCE_TO) break;
-        if (b0 > cursor) line.add(makeFenceRun(cursor, Math.min(b0, FENCE_TO), 'x', fenceZ));
+        if (b0 > cursor) addRun(cursor, Math.min(b0, FENCE_TO));
         cursor = b1;
         if (cursor >= FENCE_TO) break;
       }
-      if (cursor < FENCE_TO) line.add(makeFenceRun(cursor, FENCE_TO, 'x', fenceZ));
+      if (cursor < FENCE_TO) addRun(cursor, FENCE_TO);
+      setShadow(line, true, true);
       this.scene.add(line);
     }
-    // The frozen-villager field gets its own boundary on the two sides that face the camp.
+    // The villager field is bounded by the road fence on its camp side; these close the far
+    // west and south edges so the snowfield does not just run off into nothing.
     const field = new THREE.Group();
     field.add(makeFenceRun(9, 35, 'z', -48));
     field.add(makeFenceRun(-48, -6, 'x', 35));
+    setShadow(field, true, true);
     this.scene.add(field);
   }
 
@@ -322,6 +346,8 @@ export class Renderer {
   private clearScene(): void {
     for (const f of this.floats) this.dropFloat(f);
     this.floats = [];
+    // The sun owns a 2048² shadow map render target, which no scene-graph traversal reaches.
+    this.sun.dispose();
     while (this.scene.children.length > 0) {
       const child = this.scene.children[0];
       this.scene.remove(child);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../src/game/init';
-import { PAD_RANGE, thawCost } from '../src/content/balance';
+import { PAD_RANGE, SELL_RATE, TREE_YIELD, thawCost } from '../src/content/balance';
 import type { ZoneId } from '../src/game/state';
 import { ZONE_RECTS } from '../src/content/map';
 import { dist, inRect } from '../src/game/math';
@@ -60,10 +60,16 @@ describe('createInitialState', () => {
     expect(state.campTier).toBe(0);
   });
 
-  it('the whole forest yields more wood than every wood cost combined', () => {
-    const woodCosts = state.pads.filter((p) => p.currency === 'wood')
+  it('the whole forest yields more wood than the campaign can possibly need', () => {
+    // Worst case: every cash pad is funded by selling wood too, since wood is the only income
+    // available before the first gate. Nothing regrows, so the standing forest is the entire
+    // budget for the run.
+    const woodPadCosts = state.pads.filter((p) => p.currency === 'wood')
       .reduce((sum, p) => sum + p.cost, 0);
-    expect(state.trees.length * 2).toBeGreaterThan(woodCosts * 2); // TREE_YIELD = 2
+    const cashPadCosts = state.pads.filter((p) => p.currency === 'cash')
+      .reduce((sum, p) => sum + p.cost, 0);
+    const worstCaseWood = woodPadCosts + cashPadCosts / SELL_RATE.wood;
+    expect(state.trees.length * TREE_YIELD).toBeGreaterThan(worstCaseWood * 1.5);
   });
 
   it('gate pads cover every closed zone', () => {

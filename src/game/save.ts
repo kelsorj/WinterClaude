@@ -46,7 +46,8 @@ export function serialize(state: GameState): string {
  */
 export function deserialize(json: string): GameState {
   const data = JSON.parse(json) as SaveData;
-  if (!data || !data.player || !data.depot || !data.stats || !Array.isArray(data.padsDone)) {
+  if (!data || !data.player || !data.depot || !data.stats
+    || !Array.isArray(data.padsDone) || !Array.isArray(data.thawed) || !data.machineOutputs) {
     throw new Error('unrecognized save shape');
   }
   const state = createInitialState();
@@ -75,8 +76,8 @@ export function deserialize(json: string): GameState {
   }
   state.rescued = data.thawed.length;
   state.depot = data.depot;
-  for (const t of state.turrets) t.output = data.machineOutputs[t.id] ?? 0;
-  for (const s of state.sawmills) s.output = data.machineOutputs[s.id] ?? 0;
+  for (const t of state.turrets) t.output = data.machineOutputs?.[t.id] ?? 0;
+  for (const s of state.sawmills) s.output = data.machineOutputs?.[s.id] ?? 0;
   state.stats = data.stats;
   return state;
 }

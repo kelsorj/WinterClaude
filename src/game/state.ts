@@ -20,6 +20,7 @@ export interface Player {
   knockback: Vec2;
 }
 
+// For trees: any value > 0 means permanently felled (no countdown); seams still count down.
 export interface Tree { id: string; zone: ZoneId; pos: Vec2; hp: number; respawn: number }
 export interface GoldSeam { id: string; zone: ZoneId; pos: Vec2; hp: number; respawn: number }
 

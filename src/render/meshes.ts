@@ -347,10 +347,19 @@ function dashedRingTexture(): THREE.CanvasTexture {
   return dashedTex;
 }
 
+/** One material for every pad's ring — minting one per pad would grow SHARED on every build. */
+let dashedMat: THREE.MeshBasicMaterial | null = null;
+function dashedMaterial(): THREE.MeshBasicMaterial {
+  if (!dashedMat) {
+    dashedMat = reg(new THREE.MeshBasicMaterial({
+      map: dashedRingTexture(), transparent: true, depthWrite: false, opacity: 0.9,
+    }));
+  }
+  return dashedMat;
+}
+
 export function makeDashedDisc(): THREE.Mesh {
-  const m = new THREE.Mesh(GEO.padDashed, reg(new THREE.MeshBasicMaterial({
-    map: dashedRingTexture(), transparent: true, depthWrite: false, opacity: 0.9,
-  })));
+  const m = new THREE.Mesh(GEO.padDashed, dashedMaterial());
   m.rotation.x = -Math.PI / 2;
   // Clear of the road slab's top face (y = 0.04), or the road hides the ring entirely.
   m.position.y = 0.06;
@@ -1011,10 +1020,12 @@ function campFort(g: THREE.Group): void {
   };
   wall(8, 0, -3.8, 0);
   wall(8, -3.8, 0, Math.PI / 2);
-  // The east face is split around z ≈ -1.5: that is where the minecart rails run in, and a solid
-  // wall there would have carts driving straight through it.
+  // The east face carries both rail entrances and so runs as three stubs with a gate either
+  // side of centre: rail-t1 and rail-s1 converge at camp-local z ≈ -1.9, rail-t2 comes in at
+  // z ≈ +1.9. A solid wall at either spot has carts driving straight through it.
   wall(1.0, 3.8, -3.5, Math.PI / 2);
-  wall(4.0, 3.8, 2.0, Math.PI / 2);
+  wall(1.6, 3.8, 0, Math.PI / 2);
+  wall(1.0, 3.8, 3.5, Math.PI / 2);
   wall(2.6, -2.7, 3.8, 0); // the south face keeps a gap: that is the way in
   wall(2.6, 2.7, 3.8, 0);
   for (const tx of [-3.8, 3.8]) {
@@ -1038,8 +1049,8 @@ function campGrandFort(g: THREE.Group): void {
       if (axis === 'x') log.rotation.z = Math.PI / 2; else log.rotation.x = Math.PI / 2;
       g.add(log);
     }
-    // East face is broken by the rail gate (see `campFort`), so it runs as two stubs.
-    for (const [zc, zlen] of [[-3.9, 1.2], [2.7, 3.6]] as const) {
+    // East face is broken by both rail gates (see `campFort`), so it runs as three stubs.
+    for (const [zc, zlen] of [[-3.9, 1.2], [0, 2.0], [3.9, 1.2]] as const) {
       const log = at(cyl(0.26, zlen * (len / 9), tint), 4.3, y, zc);
       log.rotation.x = Math.PI / 2;
       g.add(log);

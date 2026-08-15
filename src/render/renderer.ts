@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { TOOLS } from '../content/balance';
-import { WORLD_BOUNDS, ZONE_RECTS, queueLaneX, worldBounds } from '../content/map';
+import {
+  DEPOT_POS, PLAZA_RADIUS, WORLD_BOUNDS, ZONE_RECTS, compoundFencePosts, worldBounds,
+} from '../content/map';
 import { cartPos, railActive } from '../game/systems/carts';
 import { padAvailable } from '../game/systems/pads';
 import { hash01 } from '../game/math';
@@ -11,9 +13,10 @@ import type {
 } from './meshes';
 import {
   BEAR_BODY_SCALE, CAMP_TIERS, COLORS, CUSTOMER_COATS, SHARED, bubbleTexture, lam, makeBear,
-  makeBench, makeCampTier, makeCarryBox, makeCart, makeCrate, makeCustomer, makeDropMesh,
-  makeFenceRun, makeGateWall, makeIconTextLabel, makeMatMesh, makePadLabel, makePadMesh,
-  makePileStack, makePlayer, makeRailMesh, makeRock, makeSawmill, makeSeam, makeSlab,
+  makeBench, makeCampTier, makeCarryBox, makeCart, makeCompoundFence, makeCrate, makeCustomer,
+  makeDropMesh, makeFenceRun, makeGateWall, makeIconTextLabel, makeMatMesh, makePadLabel,
+  makePadMesh, makePileStack, makePlayer, makePlaza, makeRailMesh, makeRock, makeSawmill,
+  makeSeam, makeSlab,
   makeBubbleLabel, makeTextLabel, makeTool, makeTurret, makeVillager, padLabelTexture, refsOf,
   snowflakeTexture, treeGeometries, treeMaterial,
 } from './meshes';
@@ -337,23 +340,19 @@ export class Renderer {
    * fence is emitted as runs between them.
    */
   private buildFences(state: GameState): void {
-    // Shared across both edges. The camp is entered from either side of the road, so it
-    // contributes a gap on each edge at its own z — an entry at the camp's centre (z = 0) would
-    // be filtered out as too far from both fence lines and open nothing.
+    // Shared across both edges. Only the pads need naming now: since Amendment 6A the benches and
+    // their mats stand inside the compound, whose own gap below is far wider than theirs was.
     const common: FenceGap[] = [];
-    for (const st of state.stations) {
-      common.push({ x: st.pos.x, z: st.pos.z, half: 2.2 });
-      common.push({ x: st.matPos.x, z: st.matPos.z, half: 2.0 });
-      // The shoppers' walk-in lane crosses the fence line to the west of the bench, outside the
-      // bench's own gap; without this they file straight through the pickets.
-      common.push({ x: queueLaneX(st), z: st.pos.z, half: 1.0 });
-    }
     for (const pad of state.pads) common.push({ x: pad.pos.x, z: pad.pos.z, half: 2.8 });
     for (const sz of [-1, 1]) {
       const fenceZ = sz * ROAD_Z;
       // Built fresh per edge: appending to one shared array leaked the -Z edge's rail crossings
       // into the +Z edge's gap set.
-      const gaps: FenceGap[] = [...common, { x: state.depotPos.x, z: fenceZ, half: 7.5 }];
+      // The roadside fence stops at the plaza and hands over to the compound's own ring, so the
+      // two never overlap and the road reads as passing through the compound's gates.
+      const gaps: FenceGap[] = [
+        ...common, { x: state.depotPos.x, z: fenceZ, half: PLAZA_RADIUS },
+      ];
       for (const rail of state.rails)
         for (const x of Renderer.crossings(rail.points, fenceZ)) gaps.push({ x, z: fenceZ, half: 1.8 });
       const blocked = gaps
@@ -520,6 +519,22 @@ export class Renderer {
     }
     this.buildGates();
     this.buildFences(state);
+    this.buildCompound();
+  }
+
+  /**
+   * The compound (Amendment 6A): the plaza the fort and its stands stand on, and the palisade
+   * ringing them. Both are static — their layout is content, not state — so they are built once
+   * with the rest of the world and never touched again.
+   */
+  private buildCompound(): void {
+    const plaza = setShadow(makePlaza(PLAZA_RADIUS), false, true);
+    plaza.position.set(DEPOT_POS.x, 0, DEPOT_POS.z);
+    this.meshes.set('plaza', plaza);
+    this.scene.add(plaza);
+    const fence = setShadow(makeCompoundFence(compoundFencePosts()), true, true);
+    this.meshes.set('compound-fence', fence);
+    this.scene.add(fence);
   }
 
   /** Drop every scene object and the GPU resources it owns. */

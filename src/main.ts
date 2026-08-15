@@ -41,6 +41,25 @@ document.addEventListener('visibilitychange', initAudio);
 window.addEventListener('beforeunload', () => saveGame(state));
 
 const FIXED = 1 / 60;
+
+/**
+ * Dev-only handle on the live simulation, for verifying behaviour in the browser: what a shopper
+ * actually walks through, whether that bear is raiding, what a save restored. `step` runs the
+ * same fixed tick the frame loop does, which is what makes a browser check reproducible — a
+ * backgrounded tab throttles `requestAnimationFrame` to a crawl, so waiting for a queue to form
+ * in real time is not a test, it is a hope.
+ *
+ * `import.meta.env.DEV` is a compile-time constant, so the production bundle drops all of this.
+ */
+if (import.meta.env.DEV) {
+  (window as unknown as { frostfall: unknown }).frostfall = {
+    state: () => state,
+    step: (seconds: number) => {
+      for (let t = 0; t < seconds; t += FIXED) update(state, { x: 0, z: 0 }, FIXED);
+      return state.time;
+    },
+  };
+}
 let acc = 0;
 let last = performance.now();
 let saveTimer = 0;

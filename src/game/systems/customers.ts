@@ -1,7 +1,7 @@
 import {
   CUSTOMER_DWELL, CUSTOMER_INTERVAL, CUSTOMER_QUEUE_CAP, CUSTOMER_SPEED, CUSTOMER_TAKE, SELL_RATE,
 } from '../../content/balance';
-import { nearestRoadEnd, queueAnchor, queueLaneX, roadLaneZ } from '../../content/map';
+import { arrivalPath, departurePath, queueAnchor, roadLaneZ, stationRoadEnd } from '../../content/map';
 import { dist, hash01, toward, v } from '../math';
 import type { Customer, GameState, SellStation } from '../state';
 
@@ -55,7 +55,7 @@ function spawnCustomers(state: GameState, dt: number): void {
     const waiting = pipeline(state, st.id);
     if (waiting.length >= CUSTOMER_QUEUE_CAP) continue;
     st.spawnTimer = 0;
-    const end = nearestRoadEnd(st.pos);
+    const end = stationRoadEnd(st);
     const id = `cust${state.nextCustomerId++}`;
     const z = roadLaneZ(end, false, laneJitter(id));
     state.customers.push({
@@ -64,9 +64,10 @@ function spawnCustomers(state: GameState, dt: number): void {
       pos: v(end.x, z),
       state: 'arriving',
       slot: waiting.length,
-      // Down the road first, then up the walk-in lane (steered per-slot once queued): an
-      // approach straight from the road end would cut the corner through the bench and the mat.
-      path: [v(queueLaneX(st), z)],
+      // Down the road, then around the compound to the head of the bench's walk-in lane; the
+      // steering below takes it from there. The route is the bench's own (see `arrivalPath`) —
+      // a line straight from the road end would cut through the fort or through the stands.
+      path: arrivalPath(st, z),
       timer: 0,
       bought: 0,
     });
@@ -87,12 +88,12 @@ function buy(state: GameState, st: SellStation, c: Customer): void {
   // A shopper that reached the counter after the shelf emptied leaves empty-handed rather than
   // blocking the line forever: queues must always drain.
   c.state = 'leaving';
-  const end = nearestRoadEnd(st.pos);
-  // Straight out from the counter to the outbound lane: the line stands BEHIND the counter, so
-  // nothing is between a served shopper and the road, and the outbound lane keeps it clear of
-  // the arrivals still walking in.
+  const end = stationRoadEnd(st);
+  // Out from the counter and back around the compound the way it came, on the outbound side of
+  // the route: the line stands BEHIND the counter, so nothing is between a served shopper and
+  // its way out, and the outbound lanes keep it clear of the arrivals still walking in.
   const z = roadLaneZ(end, true, laneJitter(c.id));
-  c.path = [v(c.pos.x, z), v(end.x, z)];
+  c.path = departurePath(st, c.pos, z);
 }
 
 function stepCustomer(state: GameState, c: Customer, dt: number): void {

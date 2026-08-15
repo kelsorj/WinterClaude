@@ -84,6 +84,8 @@ const GEO = {
   padBase: reg(new THREE.CylinderGeometry(1.5, 1.5, 0.05, 24)),
   padProgress: reg(new THREE.CylinderGeometry(1.45, 1.45, 0.06, 24)),
   padDashed: reg(new THREE.PlaneGeometry(4.2, 4.2)),
+  /** Unit disc (r = 0.5, h = 1) for the compound's paving; scaled, never re-authored. */
+  unitDisc: reg(new THREE.CylinderGeometry(0.5, 0.5, 1, 48)),
   turretBase: reg(new THREE.CylinderGeometry(0.7, 0.9, 0.5, 8)),
   turretPost: reg(new THREE.CylinderGeometry(0.15, 0.15, 1.4, 6)),
   turretBowA: reg(new THREE.BoxGeometry(1.6, 0.1, 0.14)),
@@ -542,9 +544,18 @@ export function treeGeometries(): { full: THREE.BufferGeometry; stump: THREE.Buf
   return treeGeo;
 }
 
-export function treeMaterial(): THREE.MeshLambertMaterial {
+/**
+ * The one flat-shaded vertex-coloured material. Everything that bakes several tints down into a
+ * single merged buffer — the forest, the compound's palisade — draws with it, so those merges
+ * cost one draw call each and no material of their own.
+ */
+export function vertexColorMaterial(): THREE.MeshLambertMaterial {
   if (!treeMat) treeMat = reg(new THREE.MeshLambertMaterial({ vertexColors: true }));
   return treeMat;
+}
+
+export function treeMaterial(): THREE.MeshLambertMaterial {
+  return vertexColorMaterial();
 }
 
 // ---------------------------------------------------------------------------
@@ -824,6 +835,54 @@ export function makeFenceRun(a: number, b: number, axis: 'x' | 'z', fixed: numbe
     if (axis === 'z') rail.rotation.y = Math.PI / 2;
     g.add(rail);
   }
+  freezeChildren(g);
+  return g;
+}
+
+/**
+ * The compound's palisade (Amendment 6A): one picket per authored post, merged into a single
+ * buffer. The ring is a circle, so it cannot be built from the axis-aligned runs above, and at
+ * ~190 pickets a mesh apiece it would be the most expensive object in the scene — merging makes
+ * the whole compound fence one draw call. The alternating tint that gives the roadside fence its
+ * hand-placed look is baked in as vertex colour.
+ *
+ * The geometry belongs to this mesh, not to `SHARED`: it is built from live layout data and is
+ * disposed with the mesh when the scene is torn down.
+ */
+export function makeCompoundFence(posts: { pos: { x: number; z: number }; angle: number }[]): THREE.Mesh {
+  const parts: THREE.BufferGeometry[] = [];
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  for (let i = 0; i < posts.length; i++) {
+    const post = posts[i];
+    m.compose(
+      new THREE.Vector3(post.pos.x, 0.6, post.pos.z),
+      q.setFromAxisAngle(up, post.angle),
+      new THREE.Vector3(1, 1, 1),
+    );
+    parts.push(part(GEO.fencePost, m, i % 3 === 0 ? COLORS.fenceShade : COLORS.fence));
+  }
+  // An empty merge returns null; a compound with every side gated is a legal (if odd) layout.
+  const merged = parts.length > 0 ? mergeGeometries(parts) : new THREE.BufferGeometry();
+  for (const g of parts) g.dispose();
+  return new THREE.Mesh(merged, vertexColorMaterial());
+}
+
+/**
+ * The compound's paving: a brown disc under the fort and its stands, standing in for the straight
+ * road band locally the way the reference frame's plaza does. A paler rim reads as the swept edge
+ * where the paving meets the snow.
+ */
+export function makePlaza(radius: number): THREE.Group {
+  const g = new THREE.Group();
+  const rim = new THREE.Mesh(GEO.unitDisc, lam(COLORS.roadEdge));
+  rim.scale.set(radius * 2, 0.05, radius * 2);
+  rim.position.y = 0.045;
+  const face = new THREE.Mesh(GEO.unitDisc, lam(COLORS.road));
+  face.scale.set((radius - 0.7) * 2, 0.05, (radius - 0.7) * 2);
+  face.position.y = 0.05;
+  g.add(rim, face);
   freezeChildren(g);
   return g;
 }

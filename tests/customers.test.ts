@@ -4,10 +4,11 @@ import {
   CUSTOMER_INTERVAL, CUSTOMER_QUEUE_CAP, CUSTOMER_TAKE, SELL_RATE,
 } from '../src/content/balance';
 import {
-  CAMP_FOOTPRINT, ROAD_ENDS, nearestRoadEnd, queueAnchor, roadLaneZ,
+  CAMP_FOOTPRINT, ROAD_ENDS, ZONE_RECTS, compoundFencePosts, nearestRoadEnd, queueAnchor,
+  roadLaneZ, stationRoadEnd,
 } from '../src/content/map';
 import { createInitialState } from '../src/game/init';
-import { inRect, v } from '../src/game/math';
+import { dist, inRect, v } from '../src/game/math';
 import type { GameState, SellStation } from '../src/game/state';
 import { aCustomer, aStation, blankState } from './helpers';
 
@@ -127,42 +128,72 @@ describe('shoppers and the camp building', () => {
   /** The road's paved half-width; a lane outside this is walking on the snow. */
   const ROAD_Z = 7;
 
-  it('keeps both of the east end\'s lanes in the gap between the fort and the road edge', () => {
+  it('keeps both of the east end\'s lanes on the road and out of the deep forest', () => {
     const east = ROAD_ENDS.find((e) => e.x > 0)!;
     // The jitter a shopper's id can produce is ±0.5 (see `laneJitter`); check both extremes of
     // both lanes rather than the nominal lane centres.
     for (const outbound of [false, true]) {
       for (const jitter of [-0.5, 0.5]) {
         const z = roadLaneZ(east, outbound, jitter);
-        expect(z).toBeLessThan(CAMP_FOOTPRINT.z0); // south of the building at every tier
-        expect(z).toBeGreaterThan(-ROAD_Z);        // and still on the road
+        expect(z).toBeGreaterThan(-ROAD_Z);                     // still on the road
+        expect(z).toBeGreaterThan(ZONE_RECTS.deepforest.z1);    // and clear of its gate wall
+        expect(z).toBeLessThan(0);                              // on the north side of the road
       }
     }
   });
 
-  it('never walks a shopper through the camp building', () => {
+  /**
+   * The compound sim-walk (Amendment 6A). With the stands wrapped around the fort, a shopper's
+   * route is a bespoke polyline per bench rather than "down the road and turn", so the only
+   * honest check is to run the whole thing and watch where forty-odd walkers actually put their
+   * feet: through the building, through the compound's fence, or into a zone that is still gated.
+   */
+  it('never walks a shopper through the camp building, the fence or a gated zone', () => {
     const state = createInitialState();
     for (const st of state.stations) st.stock = 500;
+    const posts = compoundFencePosts();
+    // Half a picket plus half a shopper: closer than this and the walker is inside the fence.
+    const FENCE_CLEAR = 0.35;
+    let inside = 0;
+    let throughFence = 0;
+    let inGatedZone = 0;
     // Long enough for the far end of the road to deliver its shoppers to the counter and send
     // them home again: the walk in alone is ~13 s.
-    let inside = 0;
     ticks(state, 120, () => {
-      for (const c of state.customers) if (inRect(c.pos, CAMP_FOOTPRINT)) inside++;
+      for (const c of state.customers) {
+        if (inRect(c.pos, CAMP_FOOTPRINT)) inside++;
+        if (posts.some((p) => dist(p.pos, c.pos) < FENCE_CLEAR)) throughFence++;
+        for (const rect of Object.values(ZONE_RECTS)) if (inRect(c.pos, rect)) inGatedZone++;
+      }
     });
     expect(state.customers.length).toBeGreaterThan(0); // the sim actually ran
     expect(inside).toBe(0);
+    expect(throughFence).toBe(0);
+    expect(inGatedZone).toBe(0);
   });
 
-  it('still sends the gold bench its shoppers from the east end', () => {
+  it('draws every bench a line of its own, from the end of the road it is served by', () => {
     const state = createInitialState();
-    const gold = state.stations.find((s) => s.resource === 'gold')!;
-    expect(nearestRoadEnd(gold.pos).x).toBeGreaterThan(0);
-    for (const st of state.stations) if (st !== gold) expect(nearestRoadEnd(st.pos).x).toBeLessThan(0);
+    // Both ends carry traffic: the wood and meat stands from the west, the gold stand from the
+    // east. The assignment is authored rather than nearest — every stand now sits east of centre,
+    // so by distance alone all three would draw from the east end, and the east approach is the
+    // pinched one (the hunting ground's rect walls off everything east of the compound).
+    const byEnd = new Map<number, string[]>();
+    for (const st of state.stations) {
+      const end = stationRoadEnd(st).x;
+      byEnd.set(end, [...(byEnd.get(end) ?? []), st.resource]);
+      expect(ROAD_ENDS.some((e) => e.x === end)).toBe(true);
+    }
+    expect([...byEnd.keys()].length).toBe(2);
+    expect(byEnd.get(58)).toEqual(['gold']);
+    expect(byEnd.get(-58)?.sort()).toEqual(['meat', 'wood']);
 
-    gold.stock = 30;
-    ticks(state, 60);
-    expect(gold.stock).toBeLessThan(30); // they arrive and buy
-    expect(gold.matCash).toBeGreaterThan(0);
+    for (const st of state.stations) st.stock = 30;
+    ticks(state, 90);
+    for (const st of state.stations) {
+      expect(st.stock).toBeLessThan(30);   // they all arrive and buy
+      expect(st.matCash).toBeGreaterThan(0);
+    }
   });
 });
 

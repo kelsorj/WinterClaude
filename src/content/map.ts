@@ -320,10 +320,58 @@ export function minerDefs(): Vec2[] {
   return [v(15.4, 1.2), v(15.4, 2.8)];
 }
 
+// ---------------------------------------------------------------------------
+// The fort compound (Amendment 6A)
+// ---------------------------------------------------------------------------
+
+/**
+ * The camp is a compound centred on the fort, not a row of benches along the road. Everything
+ * below is derived from these three numbers so the layout can be re-tuned as a whole rather than
+ * patched stand by stand.
+ *
+ * `COMPOUND_RADIUS` is where the fence ring runs; `STAND_RADIUS` puts the three stands just
+ * inside it, so a stand's counter is in the compound and its line steps straight out through the
+ * fence's gate gap. The 1.5 units between them is what keeps slot 0 — the shopper actually being
+ * served — inside the ring while everyone still waiting stands outside it, which is what the
+ * reference frame shows.
+ *
+ * 13 is also as wide as the ring can be: the hunting ground's rect starts at (30, 6) and the
+ * deep forest's at (30, -6), and a ring of this radius passes x = 29.5 at both, so the compound
+ * fence stops just short of both gate walls instead of running through them.
+ */
+export const COMPOUND_RADIUS = 13.0;
+const STAND_RADIUS = 11.5;
+
+/**
+ * Where each stand sits on the arc, in degrees from +x toward +z (south). The fan is 45° apart
+ * and centred on due south: the fort's north face is the road, so the arc can only occupy the
+ * southern half, and 45° is the narrowest spacing that still leaves a bench, its mat and its
+ * walk-in lane clear of its neighbour's (2 × 11.5 × sin 22.5° = 8.8 units between counters).
+ */
+const STAND_BEARINGS: Record<string, number> = { 'st-wood': 135, 'st-meat': 90, 'st-gold': 45 };
+
+const onArc = (deg: number, r: number): Vec2 => v(
+  DEPOT_POS.x + Math.cos((deg * Math.PI) / 180) * r,
+  DEPOT_POS.z + Math.sin((deg * Math.PI) / 180) * r,
+);
+
+/**
+ * How far behind its counter a stand's cash mat sits. The mat used to stand beside the bench,
+ * which put it exactly where the next stand's walk-in lane wants to be once the benches are on an
+ * arc; behind the counter it is inside the compound, where the player collects it on the way past
+ * the fort, and the whole outward side of every stand is left to the queue.
+ */
+const MAT_BEHIND = 2.4;
+
 export function stationDefs(): SellStation[] {
-  const st = (id: string, resource: SellStation['resource'], x: number): SellStation =>
-    ({ id, resource, pos: v(x, 6.5), matPos: v(x + 2.5, 6.5), matCash: 0, timer: 0, stock: 0, spawnTimer: 0 });
-  return [st('st-wood', 'wood', -8), st('st-meat', 'meat', 0), st('st-gold', 'gold', 8)];
+  const st = (id: string, resource: SellStation['resource']): SellStation => {
+    const pos = onArc(STAND_BEARINGS[id], STAND_RADIUS);
+    return {
+      id, resource, pos, matPos: v(pos.x, pos.z - MAT_BEHIND),
+      matCash: 0, timer: 0, stock: 0, spawnTimer: 0,
+    };
+  };
+  return [st('st-wood', 'wood'), st('st-meat', 'meat'), st('st-gold', 'gold')];
 }
 
 /**
@@ -337,25 +385,97 @@ export function stationDefs(): SellStation[] {
  * the road is what sets how many shoppers are on the map at once (see CUSTOMER_QUEUE_CAP).
  * Pushing them to ±188 would triple that walk and, with it, the on-screen crowd.
  *
- * The east end's z is the one number here with a hard constraint on it. Only the gold bench draws
- * from that end, and its shoppers walk the whole way from x = 58 to the bench's walk-in lane at
- * x ≈ 4.4 at a constant z — a line that passes straight through the camp at x ∈ [13.7, 22.3].
- * At the old z = -2 they walked through the Fort's walls. The lanes now thread the gap between
- * `CAMP_FOOTPRINT`'s south face (z = -4.3) and the road's south edge (z = -7):
+ * The east end's z is the one number here with a hard constraint on it, and since Amendment 6A it
+ * is a different constraint. Its shoppers no longer thread the corridor between the fort's north
+ * face and the road's edge — the gold stand's lane is at x = 24.3, east of the whole building, so
+ * they never reach the camp's x range at all. What they DO cross is the deep forest's rect, whose
+ * south face (z = -6) reaches over the road's north side for every x ≥ 30. At the old z = -6.25
+ * both lanes ran inside that rect, i.e. through a gate wall that is still standing when the
+ * shoppers first arrive. The lanes now sit south of it, in the open half of the road:
  *
- *     arrivals   z = -6.25 ± 0.5  →  [-6.75, -5.75]
- *     departures z = -5.05 ± 0.5  →  [-5.55, -4.55]   (arrivals + ROAD_LANE_OFFSET)
+ *     arrivals   z = -5.4 ± 0.5  →  [-5.9, -4.9]
+ *     departures z = -4.2 ± 0.5  →  [-4.7, -3.7]   (arrivals + ROAD_LANE_OFFSET)
  *
- * which leaves a quarter-unit either side — the widest the two lanes plus their jitter can be
- * spaced inside a 2.7-unit corridor. They cross the p-camp3 and p-gate-deep pads on the way,
- * which is cosmetic: pads only ever answer to the player.
- *
- * The west end needs no such care. Its lanes (z = 2 and 3.2) do sit inside the camp's z range,
- * but its shoppers serve the wood and meat benches at x ≤ 0 and turn off the road at x ≈ -3.6 at
- * the furthest east, so they never reach the camp's x range at all. `customers.test.ts` checks
- * the actual walked positions against the footprint rather than trusting that argument.
+ * The west end needs no such care: its shoppers turn off the road at x ≤ 11.8, west of the
+ * camp's x range, so they never reach it either. `customers.test.ts` walks the whole simulation
+ * and checks the positions against the fort, the compound fence and every gated rect rather than
+ * trusting any of these arguments.
  */
-export const ROAD_ENDS: Vec2[] = [v(-58, 2), v(58, -6.25)];
+export const ROAD_ENDS: Vec2[] = [v(-58, 2), v(58, -5.4)];
+
+/**
+ * How each stand's shoppers get between the road and the head of its walk-in lane (Amendment 6A).
+ *
+ * With the stands wrapped around the fort, "walk down the road to the lane's x and turn" is no
+ * longer enough on its own: the meat stand is due south of the fort, so a straight turn off the
+ * road into its lane walks through the building. Each stand therefore carries an explicit route.
+ *
+ * `end` is which end of the road the stand draws from — the wood and meat stands from the west,
+ * the gold stand from the east, so the two road ends both carry traffic and the compound is
+ * approached from both sides like the reference frame. It is authored rather than taken from
+ * `nearestRoadEnd` because every stand now sits east of centre: by distance alone all three would
+ * draw from the east end, and the east approach is the pinched one (the hunting ground's rect
+ * walls off everything east of x = 30 south of z = 6).
+ *
+ * `in` and `out` are the corners walked between the road and the lane head, in walk order. They
+ * are separate lists so the two directions thread the 2.6-unit corridor between the wood stand
+ * and the fort's west face on their own lines rather than head-on: `in` hugs the stand side,
+ * `out` the fort side.
+ */
+interface StationRoute { end: Vec2; in: Vec2[]; out: Vec2[] }
+
+const STATION_ROUTES: Record<string, StationRoute> = {
+  // The two flanking stands need no corners: their lanes are clear of `CAMP_FOOTPRINT` in x, so
+  // a shopper turns off the road straight into the lane exactly as it always did.
+  'st-wood': { end: ROAD_ENDS[0], in: [], out: [] },
+  'st-gold': { end: ROAD_ENDS[1], in: [], out: [] },
+  // The meat stand is due south of the fort, so its shoppers thread the 2.6-unit corridor between
+  // the wood stand's bench and the fort's west face (x = 13.7) and only then turn east under the
+  // fort's south wall. The two lines sit 1.2 apart — the same spacing the road lanes use.
+  'st-meat': {
+    end: ROAD_ENDS[0],
+    in: [v(11.8, 7.6)],
+    out: [v(13.0, 8.8)],
+  },
+};
+
+/** Route for a bench; benches with no authored route walk straight in off the nearest end. */
+function routeOf(st: SellStation): StationRoute {
+  return STATION_ROUTES[st.id] ?? { end: nearestRoadEnd(st.pos), in: [], out: [] };
+}
+
+/** Which end of the road this bench's shoppers arrive from and leave to. */
+export function stationRoadEnd(st: SellStation): Vec2 {
+  return routeOf(st).end;
+}
+
+/**
+ * The walk in: down the road at the shopper's own lane z, then around the compound by the route's
+ * corners, ending at the head of the bench's walk-in lane. From there `customersTick` steers the
+ * shopper down the lane to its slot.
+ */
+export function arrivalPath(st: SellStation, roadZ: number): Vec2[] {
+  const corners = routeOf(st).in;
+  const laneX = queueLaneX(st);
+  if (corners.length === 0) return [v(laneX, roadZ)];
+  const path = [v(corners[0].x, roadZ), ...corners.map((c) => v(c.x, c.z))];
+  const last = corners[corners.length - 1];
+  path.push(v(laneX, last.z));
+  return path;
+}
+
+/**
+ * The walk home: out of the compound by the route's corners (reversed for the outbound side),
+ * then onto the departure lane and off the end of the road. A served shopper starts at the
+ * counter with the whole line standing behind it, so nothing is between it and the first corner.
+ */
+export function departurePath(st: SellStation, from: Vec2, roadZ: number): Vec2[] {
+  const route = routeOf(st);
+  const path = route.out.map((c) => v(c.x, c.z));
+  const last = route.out[route.out.length - 1];
+  path.push(v(last ? last.x : from.x, roadZ), v(route.end.x, roadZ));
+  return path;
+}
 
 /**
  * How far a departing shopper's road lane sits from the arriving lane it walks beside. Both
@@ -372,19 +492,24 @@ export function roadLaneZ(end: Vec2, outbound: boolean, jitter: number): number 
 
 /**
  * Where a bench's line starts, relative to the bench, and how far apart shoppers stand in it.
- * The line runs AWAY from the road (+z, the snow side) so it never blocks the road, and is
- * offset in x to clear both the bench itself and the cash mat on the far side of it.
+ * The line runs due south (+z), straight out from the counter and away from the fort behind it —
+ * the compound is north of every stand, so south is "outward" for all three (Amendment 6A).
+ *
+ * The old -2.0 x-offset is gone with the mat that caused it: the line now runs squarely out from
+ * the counter, which is what lets three fanned stands each keep a clear column of snow to queue
+ * in. Due south rather than radially outward is deliberate — the hunting ground's rect starts at
+ * x = 30, and a gold queue splayed to the south-east would file straight through its gate wall.
  */
-export const QUEUE_OFFSET: Vec2 = v(-2.0, 1.2);
+export const QUEUE_OFFSET: Vec2 = v(0, 1.2);
 export const QUEUE_SPACING = 1.1;
 
 /**
  * How far the walk-in lane runs to the side of the standing line. Arrivals come up this lane,
  * level with their slot, and only then step across into it — the line is entered from the side,
  * never walked down. Wide enough that a shopper in the lane and one standing in the line do not
- * overlap, and near enough the bench that the lane still crosses the road fence in its gap.
+ * overlap, and narrow enough that the lane and the line share one gate gap in the fence ring.
  */
-export const QUEUE_LANE_DX = -1.6;
+export const QUEUE_LANE_DX = -1.8;
 
 /** Standing spot for the `slot`-th shopper in a bench's line; slot 0 is at the counter. */
 export function queueAnchor(st: SellStation, slot: number): Vec2 {
@@ -400,6 +525,106 @@ export function queueLaneX(st: SellStation): number {
 export function nearestRoadEnd(pos: Vec2): Vec2 {
   return ROAD_ENDS.reduce((best, end) => (dist(end, pos) < dist(best, pos) ? end : best));
 }
+
+// ---------------------------------------------------------------------------
+// The compound fence ring (Amendment 6A)
+// ---------------------------------------------------------------------------
+
+/** Half-width of the road corridor the fence ring opens for, road edging included. */
+const ROAD_GATE_HALF = 7.4;
+/** Spacing of the ring's pickets. Matches the roadside fence's, so the two read as one fence. */
+export const COMPOUND_POST_SPACING = 0.42;
+
+/** An opening in the fence ring: everything within `half` of `pos` is left unbuilt. */
+export interface FenceGap { pos: Vec2; half: number }
+
+/** Where a straight run from `a` to `b` crosses the ring, if it does. */
+function ringCrossings(a: Vec2, b: Vec2): Vec2[] {
+  // |a + t(b-a) - centre|² = R², solved for t ∈ [0, 1].
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const fx = a.x - DEPOT_POS.x, fz = a.z - DEPOT_POS.z;
+  const qa = dx * dx + dz * dz;
+  if (qa < 1e-9) return [];
+  const qb = 2 * (fx * dx + fz * dz);
+  const qc = fx * fx + fz * fz - COMPOUND_RADIUS * COMPOUND_RADIUS;
+  const disc = qb * qb - 4 * qa * qc;
+  if (disc < 0) return [];
+  const root = Math.sqrt(disc);
+  const out: Vec2[] = [];
+  for (const t of [(-qb - root) / (2 * qa), (-qb + root) / (2 * qa)]) {
+    if (t >= 0 && t <= 1) out.push(v(a.x + dx * t, a.z + dz * t));
+  }
+  return out;
+}
+
+/**
+ * Every opening in the compound's fence: the road passing through east and west, each stand's
+ * queue and walk-in lane heading out south, and every rail that reaches the fort.
+ *
+ * They are derived from the same data the walkers and the carts are driven by rather than
+ * authored as numbers, so a stand or a rail that moves takes its gate with it. The road openings
+ * are wide — a fourteen-unit road crossing a twenty-five-unit-wide compound is most of two of its
+ * faces — which is exactly what the reference frame shows: fence between the buildings, open
+ * where the traffic runs.
+ */
+export function compoundGaps(): FenceGap[] {
+  const gaps: FenceGap[] = [];
+  for (const sx of [-1, 1]) {
+    // Chord from the ring's east/west pole to the ring point level with the road's edge.
+    const inset = COMPOUND_RADIUS - Math.sqrt(COMPOUND_RADIUS ** 2 - ROAD_GATE_HALF ** 2);
+    gaps.push({
+      pos: v(DEPOT_POS.x + sx * COMPOUND_RADIUS, DEPOT_POS.z),
+      half: Math.hypot(inset, ROAD_GATE_HALF) + 0.2,
+    });
+  }
+  for (const st of stationDefs()) {
+    // The line and the lane both run due south at a fixed x, so each crosses the ring where that
+    // vertical meets it — NOT where the fort's radius through the stand does. Their two gaps sit
+    // ~2.6 apart and merge into one shopper gate per stand.
+    for (const x of [st.pos.x, queueLaneX(st)]) {
+      const dx = x - DEPOT_POS.x;
+      gaps.push({
+        pos: v(x, DEPOT_POS.z + Math.sqrt(Math.max(0, COMPOUND_RADIUS ** 2 - dx * dx))),
+        half: 1.4,
+      });
+    }
+  }
+  for (const rail of railDefs()) {
+    for (let i = 1; i < rail.points.length; i++) {
+      for (const p of ringCrossings(rail.points[i - 1], rail.points[i])) gaps.push({ pos: p, half: 1.8 });
+    }
+  }
+  return gaps;
+}
+
+/**
+ * The ring's pickets, as world positions with the facing of the fence at that point. Emitting
+ * posts rather than runs is what lets the ring be a circle at all — the roadside fence's runs are
+ * axis-aligned — and it gives the tests something exact to measure a shopper's clearance against.
+ */
+export function compoundFencePosts(): { pos: Vec2; angle: number }[] {
+  const circumference = 2 * Math.PI * COMPOUND_RADIUS;
+  const n = Math.round(circumference / COMPOUND_POST_SPACING);
+  const gaps = compoundGaps();
+  const posts: { pos: Vec2; angle: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const pos = v(
+      DEPOT_POS.x + Math.cos(a) * COMPOUND_RADIUS,
+      DEPOT_POS.z + Math.sin(a) * COMPOUND_RADIUS,
+    );
+    if (gaps.some((g) => dist(g.pos, pos) < g.half)) continue;
+    // The picket board is authored across x, so it faces outward when turned by the bearing.
+    posts.push({ pos, angle: -a });
+  }
+  return posts;
+}
+
+/**
+ * How far the plaza disc reaches. A shade past the fence so the ring stands ON the paving rather
+ * than beside it, and the queues' first step out of the gate is still on the compound's ground.
+ */
+export const PLAZA_RADIUS = COMPOUND_RADIUS + 1.2;
 
 export function turretDefs(): Turret[] {
   return [
@@ -433,32 +658,36 @@ export function padDefs(): Pad[] {
   // {gate-hunt, distributor} → turret2, and sawmill1 → gate-quarry → pickaxe →
   // {carry2, speed2, camp4}.
   return [
+    // The camp pads ring the fort's yard the way they always did, but the yard is now a compound:
+    // the arc south of the fort belongs to the stands, their mats and three columns of shoppers,
+    // so the pads that used to stand there moved to the shelf north of the road and to the two
+    // clear bays between the queues. Every one of them is still inside the fence ring.
     p('p-camp1',      v(11, -4),   'wood', 12, { type: 'camp', tier: 1 }),
     p('p-axe',        v(-4, -4),   'cash', 10, { type: 'tool', tool: 'axe' }, 'p-camp1'),
     p('p-carry1',     v(-10, -4),  'cash', 30, { type: 'carry', add: 12 }, 'p-axe'),
     p('p-speed1',     v(-16, -4),  'cash', 40, { type: 'speed', mult: 1.3 }, 'p-axe'),
-    p('p-gate-deep',  v(24, -5),   'wood', 15, { type: 'gate', zone: 'deepforest' }, 'p-axe'),
-    p('p-camp2',      v(11, 4),    'wood', 40, { type: 'camp', tier: 2 }, 'p-gate-deep'),
+    p('p-gate-deep',  v(21.5, -6.5), 'wood', 15, { type: 'gate', zone: 'deepforest' }, 'p-axe'),
+    p('p-camp2',      v(11, -9.5), 'wood', 40, { type: 'camp', tier: 2 }, 'p-gate-deep'),
     p('p-turret1',    v(31, -8),   'cash', 25, { type: 'machine', machineId: 'turret1' }, 'p-camp2'),
     p('p-sawmill1',   v(34, -16),  'cash', 30, { type: 'machine', machineId: 'sawmill1' }, 'p-camp2'),
     p('p-scythe',     v(4, -4),    'cash', 40, { type: 'tool', tool: 'scythe' }, 'p-turret1'),
     p('p-camp3',      v(15, -6),   'wood', 90, { type: 'camp', tier: 3 }, 'p-scythe'),
-    p('p-gate-hunt',  v(24, 5),    'meat', 20, { type: 'gate', zone: 'hunting' }, 'p-camp3'),
+    p('p-gate-hunt',  v(28.5, 2), 'meat', 20, { type: 'gate', zone: 'hunting' }, 'p-camp3'),
     p('p-turret2',    v(31, 8),    'cash', 50, { type: 'machine', machineId: 'turret2' }, 'p-gate-hunt'),
     // Sits off the fort's south-east corner, clear of the camp footprint, the rail gates and the
     // road fence, so the player walks past it on the way in from the benches.
-    p('p-distributor', v(20, 9.5), 'cash', 100, { type: 'distributor' }, 'p-camp3'),
+    p('p-distributor', v(21.3, 10.5), 'cash', 100, { type: 'distributor' }, 'p-camp3'),
     p('p-gate-quarry', v(-24, -5), 'cash', 60, { type: 'gate', zone: 'quarry' }, 'p-sawmill1'),
     p('p-pickaxe',    v(-31, -8),  'cash', 30, { type: 'pickaxe' }, 'p-gate-quarry'),
     p('p-carry2',     v(-10, 4),   'gold', 8,  { type: 'carry', add: 24 }, 'p-pickaxe'),
     p('p-speed2',     v(-16, 4),   'gold', 10, { type: 'speed', mult: 1.3 }, 'p-pickaxe'),
-    p('p-camp4',      v(15, 6),    'gold', 12, { type: 'camp', tier: 4 }, 'p-pickaxe'),
+    p('p-camp4',      v(13, 10.5), 'gold', 12, { type: 'camp', tier: 4 }, 'p-pickaxe'),
     // The one repeatable pad (Amendment 5B). It mirrors the distributor across the road, off the
     // fort's south-west corner: outside `CAMP_FOOTPRINT`, south of the shoppers' corridor (which
     // threads z ∈ [-6.75, -4.55] on its way to the gold bench), and inside the south fence's
     // depot gap, so the player walks past it coming and going from the camp. It hangs off the
     // Fort rather than standing open from the first frame — an expedition is what a camp mounts
     // once it is a camp, and the price is priced for a late-game economy.
-    p('p-expedition', v(20, -9.5), 'cash', EXPEDITION_BASE, { type: 'expedition' }, 'p-camp3', true),
+    p('p-expedition', v(20, -10.5), 'cash', EXPEDITION_BASE, { type: 'expedition' }, 'p-camp3', true),
   ];
 }

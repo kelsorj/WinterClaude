@@ -52,4 +52,13 @@ describe('pickupTick', () => {
     state.player.carry = { wood: 1, meat: 2, gold: 3 };
     expect(carryTotal(state)).toBe(6);
   });
+
+  it('takes only what fits when several drops compete in one tick', () => {
+    const state = blankState();
+    state.player.carry.wood = 11; // one slot left
+    state.drops.push(drop('d1', 'meat'), drop('d2', 'gold', v(0.4, 0)));
+    pickupTick(state, 1 / 60);
+    expect(carryTotal(state)).toBe(12);
+    expect(state.drops).toHaveLength(1);
+  });
 });

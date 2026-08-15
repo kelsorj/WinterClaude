@@ -59,4 +59,12 @@ describe('bearsTick', () => {
     ticks(state, 0.5);
     expect(state.bears[0].pos).toEqual({ x: 5, z: 0 });
   });
+
+  it('bears cannot enter sealed zones', () => {
+    const state = blankState();
+    state.player.pos = v(-40, -20); // inside the sealed quarry (test-only placement)
+    state.bears.push(aBear({ state: 'aggro', pos: v(-28, -20), home: v(-28, -20) }));
+    ticks(state, 2);
+    expect(state.bears[0].pos.x).toBeGreaterThanOrEqual(-30);
+  });
 });

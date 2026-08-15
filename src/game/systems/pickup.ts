@@ -3,8 +3,7 @@ import { dist, toward, v } from '../math';
 import type { Drop, GameState } from '../state';
 
 export function carryTotal(state: GameState): number {
-  const c = state.player.carry;
-  return c.wood + c.meat + c.gold;
+  return Object.values(state.player.carry).reduce((a, b) => a + b, 0);
 }
 
 export function pickupTick(state: GameState, dt: number): void {

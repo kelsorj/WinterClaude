@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { harvestTick } from '../src/game/systems/harvest';
+import { harvestTick, killBear } from '../src/game/systems/harvest';
 import { v } from '../src/game/math';
 import { aBear, aSeam, aTree, blankState } from './helpers';
 
@@ -76,5 +76,34 @@ describe('harvestTick', () => {
     const hit = state.trees.filter((t) => t.hp < 3);
     expect(hit).toHaveLength(1);
     expect(hit[0].id).toBe('near');
+  });
+
+  it('killBear routes meat to a turret output when killed by a turret', () => {
+    const state = blankState();
+    const turret = { id: 'turret1', pos: v(0, 0), range: 10, cd: 0, active: true, output: 0 };
+    state.turrets.push(turret);
+    const bear = aBear();
+    state.bears.push(bear);
+    killBear(state, bear, { kind: 'turret', turret });
+    expect(turret.output).toBe(3);
+    expect(state.drops).toHaveLength(0);
+    expect(bear.state).toBe('dead');
+  });
+
+  it('seams respawn after their timer', () => {
+    const state = blankState();
+    state.seams.push(aSeam({ pos: v(50, 0), hp: 0, respawn: 0.5 }));
+    ticks(state, 1);
+    expect(state.seams[0].respawn).toBe(0);
+    expect(state.seams[0].hp).toBe(4);
+  });
+
+  it('stops chopping trees when carry is full', () => {
+    const state = blankState();
+    state.player.carry.wood = 12; // cap
+    state.trees.push(aTree());
+    ticks(state, 2);
+    expect(state.drops).toHaveLength(0);
+    expect(state.trees[0].hp).toBe(3);
   });
 });

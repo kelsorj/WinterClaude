@@ -1,8 +1,9 @@
 import {
   BEAR_ATTACK_CD, BEAR_ATTACK_RANGE, BEAR_KNOCKBACK, BEAR_LEASH, BEAR_SPEED,
 } from '../../content/balance';
-import { dist, norm, scale, toward, v } from '../math';
+import { add, dist, norm, scale, toward, v } from '../math';
 import type { GameState } from '../state';
+import { blockedByZones } from './movement';
 
 export function bearsTick(state: GameState, dt: number): void {
   const p = state.player;
@@ -11,7 +12,7 @@ export function bearsTick(state: GameState, dt: number): void {
     if (b.state === 'dead') {
       b.respawn -= dt;
       if (b.respawn <= 0) {
-        b.respawn = 0; b.state = 'sleep'; b.hp = b.maxHp; b.pos = v(b.home.x, b.home.z);
+        b.respawn = 0; b.state = 'sleep'; b.hp = b.maxHp; b.pos = v(b.home.x, b.home.z); b.attackCd = 0;
       }
       continue;
     }
@@ -23,10 +24,11 @@ export function bearsTick(state: GameState, dt: number): void {
       continue;
     }
     if (d > BEAR_ATTACK_RANGE) {
-      b.pos = toward(b.pos, p.pos, BEAR_SPEED * dt);
+      const next = toward(b.pos, p.pos, BEAR_SPEED * dt);
+      if (!blockedByZones(state, next)) b.pos = next;
     } else if (b.attackCd === 0) {
       b.attackCd = BEAR_ATTACK_CD;
-      p.knockback = scale(norm(v(p.pos.x - b.pos.x, p.pos.z - b.pos.z)), BEAR_KNOCKBACK);
+      p.knockback = add(p.knockback, scale(norm(v(p.pos.x - b.pos.x, p.pos.z - b.pos.z)), BEAR_KNOCKBACK));
       state.events.push({ type: 'playerHit', pos: v(p.pos.x, p.pos.z) });
     }
   }

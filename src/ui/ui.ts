@@ -51,15 +51,6 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
     hud.appendChild(row);
     rows.set(key, { el: row, value, prev: 0 });
   }
-  // Rescued villagers close the sidebar as a final row, so every number the player tracks sits
-  // in one column (spec Amendment 1D) with a drawn icon rather than an emoji (1C).
-  const rescuedRow = document.createElement('div');
-  rescuedRow.className = 'res';
-  const rescuedValue = document.createElement('span');
-  rescuedValue.textContent = '0/0';
-  rescuedRow.append(iconCanvas('villager'), rescuedValue);
-  hud.appendChild(rescuedRow);
-  let rescuedText = '';
   document.body.appendChild(hud);
 
   const pause = overlay();
@@ -107,13 +98,6 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
         row.value.textContent = String(val);
         row.prev = val;
       }
-    }
-    // Only the snowfield's frozen villagers can be rescued; the fort crew is hired, not thawed.
-    const rescuable = state.villagers.filter((vil) => vil.kind === 'rescued').length;
-    const text = `${state.rescued}/${rescuable}`;
-    if (text !== rescuedText) {
-      rescuedText = text;
-      rescuedValue.textContent = text;
     }
     if (state.won && !winShown) {
       winShown = true;

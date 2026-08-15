@@ -22,15 +22,13 @@ export const SHARED: ReadonlySet<THREE.BufferGeometry | THREE.Material | THREE.T
 export const COLORS = {
   trunk: 0x8a5738, trunkDark: 0x6d4327,
   foliage: 0x5fb0e6, foliage2: 0x7cc4f0, foliage3: 0x9bd6f7, snowCap: 0xffffff,
-  snow: 0xfbfdff, trench: 0xdfeaf8,
+  snow: 0xfbfdff,
   road: 0xd89a66, roadEdge: 0xeab98a,
   bear: 0xfcfbf7, bearSnout: 0xb9bcc2,
   skin: 0xf1c9a2, beard: 0xf8f8f5, fur: 0xf3e7d2,
   playerCoat: 0x2f6fbb, playerCoatDark: 0x24548f,
-  villagerCoat: 0x2fb3c9, villagerCoatDark: 0x208d9e,
   crewCoat: 0xf07818, crewCoatDark: 0xbc560c,
   minerCoat: 0x59646f, minerCoatDark: 0x3c454e,
-  ice: 0x9adcf0, frost: 0xdff7ff,
   bench: 0xef9640, benchDark: 0xc4762c, mat: 0x33383d,
   wood: 0xb07a3f, meat: 0xdc5a52, gold: 0xf6c945, cash: 0x4fbf62,
   rail: 0x6b4a2b, machine: 0xb5834f,
@@ -78,7 +76,6 @@ const GEO = {
   bearNose: reg(new THREE.SphereGeometry(0.11, 6, 6)),
   bearLeg: reg(new THREE.CylinderGeometry(0.24, 0.26, 0.55, 7)),
   bearTail: reg(new THREE.SphereGeometry(0.17, 6, 6)),
-  villagerIce: reg(new THREE.BoxGeometry(1.02, 1.95, 1.02)),
   villagerLoad: reg(new THREE.BoxGeometry(0.5, 0.4, 0.5)),
   benchTop: reg(new THREE.BoxGeometry(2.4, 0.24, 1.05)),
   benchBase: reg(new THREE.BoxGeometry(2.1, 0.66, 0.85)),
@@ -125,8 +122,8 @@ function freezeChildren(root: THREE.Object3D): void {
 // Canvas iconography
 // ---------------------------------------------------------------------------
 
-/** The four commodities plus the rescued-villager marker used by the HUD's last row. */
-export type IconKind = Currency | 'villager';
+/** The four commodities: the HUD rows, the bench bubbles and every pad's price tag. */
+export type IconKind = Currency;
 
 /**
  * Draws an icon centred on (x, y) inside a `size`-wide box. Emoji render
@@ -195,20 +192,6 @@ export function drawIcon(
     ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = line * 1.2;
     ctx.beginPath();
     ctx.moveTo(tl + w * 0.06, -h * 0.66); ctx.lineTo(tl + w * 0.3, -h * 0.66); ctx.stroke();
-  } else if (kind === 'villager') {
-    // Rescued villager: head-and-shoulders silhouette in the villagers' teal parka.
-    const head = size * 0.21, sh = size * 0.34;
-    ctx.fillStyle = '#2fb3c9';
-    ctx.beginPath();
-    ctx.arc(0, size * 0.42, sh, Math.PI, 0);
-    ctx.lineTo(sh, size * 0.5);
-    ctx.lineTo(-sh, size * 0.5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#208d9e'; ctx.lineWidth = line;
-    ctx.stroke();
-    ctx.fillStyle = '#2fb3c9';
-    ctx.beginPath(); ctx.arc(0, -size * 0.14, head, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   } else {
     // Cash: green bill with a paler field and a bold $.
     const w = size * 0.94, h = size * 0.58;
@@ -605,40 +588,30 @@ export function makeTool(kind: ToolId | 'pickaxe'): THREE.Group {
   return g;
 }
 
-export interface VillagerRefs extends PersonRefs {
-  ice: THREE.Object3D; frost: THREE.Object3D; load: THREE.Mesh;
-}
+export interface VillagerRefs extends PersonRefs { load: THREE.Mesh }
 
 /**
- * Rescued villagers wear the camp's teal; the fort's hand-off crew wears hi-vis orange and the
- * Grand Fort's miners slate grey, so each of the three reads as its own job at a glance — and
- * none of them can be mistaken for the player's blue.
+ * The fort's hand-off crew wears hi-vis orange and the Grand Fort's miners slate grey, so each
+ * reads as its own job at a glance — and neither can be mistaken for the player's blue or a
+ * shopper's warm parka.
  */
 const VILLAGER_COATS: Record<VillagerKind, { coat: number; dark: number }> = {
-  rescued: { coat: COLORS.villagerCoat, dark: COLORS.villagerCoatDark },
   crew: { coat: COLORS.crewCoat, dark: COLORS.crewCoatDark },
   miner: { coat: COLORS.minerCoat, dark: COLORS.minerCoatDark },
 };
 
-export function makeVillager(kind: VillagerKind = 'rescued'): THREE.Group {
+export function makeVillager(kind: VillagerKind = 'crew'): THREE.Group {
   const palette = VILLAGER_COATS[kind];
   const g = makePerson(palette.coat, palette.dark, false);
   const base = refsOf<PersonRefs>(g);
   // Miners carry the pickaxe the whole time, idle or not — it is what marks them out in the
   // yard before tier 4 gives them anything to swing it at.
   if (kind === 'miner') base.toolMount.add(makeTool('pickaxe'));
-  const ice = new THREE.Mesh(GEO.villagerIce, lam(COLORS.ice, 0.45));
-  ice.position.y = 0.97;
-  // A second, slightly smaller box of frost inside sells the "frozen solid" read that a single
-  // translucent shell cannot — you see depth through the ice.
-  const frost = new THREE.Mesh(GEO.villagerIce, lam(COLORS.frost, 0.35));
-  frost.scale.setScalar(0.82);
-  frost.position.y = 0.97;
   const load = new THREE.Mesh(GEO.villagerLoad, lam(COLORS.wood));
   load.position.set(0, 1.1, -0.45);
   load.visible = false;
-  g.add(ice, frost, load);
-  g.userData.refs = { ...base, ice, frost, load } satisfies VillagerRefs;
+  g.add(load);
+  g.userData.refs = { ...base, load } satisfies VillagerRefs;
   return g;
 }
 

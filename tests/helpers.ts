@@ -18,7 +18,7 @@ export function blankState(): GameState {
     campTier: 0,
     distributorActive: false,
     zonesOpen: { start: true, deepforest: false, hunting: false, quarry: false },
-    rescued: 0, won: false,
+    won: false,
     stats: { chops: 0, bearsKilled: 0, earned: 0 },
     events: [], nextDropId: 1, nextCustomerId: 1,
   };
@@ -52,12 +52,9 @@ export const aRail = (over: Partial<Rail> = {}): Rail =>
 export const aCart = (over: Partial<Cart> = {}): Cart =>
   ({ id: 'c1', railId: 'r1', s: 0, dir: -1, load: 0, cap: 6, ...over });
 
-export const aVillager = (over: Partial<Villager> = {}): Villager =>
-  ({ id: 'v1', kind: 'rescued', pos: v(0, 1), state: 'frozen', carrying: null, amount: 0,
+export const aCrew = (over: Partial<Villager> = {}): Villager =>
+  ({ id: 'crew0', kind: 'crew', pos: v(0, 1), carrying: null, amount: 0,
      target: null, rotation: 0, ...over });
 
-export const aCrew = (over: Partial<Villager> = {}): Villager =>
-  aVillager({ id: 'crew0', kind: 'crew', state: 'hauler', ...over });
-
 export const aMiner = (over: Partial<Villager> = {}): Villager =>
-  aVillager({ id: 'miner0', kind: 'miner', state: 'hauler', pos: v(0, 0), ...over });
+  aCrew({ id: 'miner0', kind: 'miner', pos: v(0, 0), ...over });

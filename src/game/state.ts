@@ -80,17 +80,15 @@ export interface Sawmill { id: string; pos: Vec2; radius: number; timer: number;
 export interface Rail { id: string; points: Vec2[]; sourceType: 'turret' | 'sawmill'; sourceId: string }
 export interface Cart { id: string; railId: string; s: number; dir: 1 | -1; load: number; cap: number }
 
-export type VillagerState = 'frozen' | 'walking' | 'hauler';
 /**
- * 'rescued' villagers start frozen in the snowfield and are thawed for meat. The other two are
- * the fort's own staff — present from the start, never frozen, never counted toward the rescued
- * total or the win, and idle at their posts until the camp earns them: 'crew' are the hand-off
- * team the distributor pad hires (Amendment 2B), 'miner' the gold crew the Grand Fort brings
- * with it (Amendment 3A).
+ * The fort's staff — present from the first frame, idle at their posts until the camp earns
+ * them: 'crew' are the hand-off team the distributor pad hires (Amendment 2B), 'miner' the gold
+ * crew the Grand Fort brings with it (Amendment 3A). Since Amendment 4C these are the only
+ * villagers there are: the snowfield of frozen villagers, and rescuing them, is gone.
  */
-export type VillagerKind = 'rescued' | 'crew' | 'miner';
+export type VillagerKind = 'crew' | 'miner';
 export interface Villager {
-  id: string; kind: VillagerKind; pos: Vec2; state: VillagerState;
+  id: string; kind: VillagerKind; pos: Vec2;
   carrying: ResourceKind | null; amount: number;
   /** Miners only: the seam this one has claimed, so no two ever work the same rock. */
   target: string | null;
@@ -109,7 +107,6 @@ export type GameEvent =
   | { type: 'deposit'; pos: Vec2 }
   | { type: 'sell'; pos: Vec2; cash: number }
   | { type: 'unlock'; pos: Vec2 }
-  | { type: 'thaw'; pos: Vec2 }
   | { type: 'bearHit'; pos: Vec2 }
   | { type: 'playerHit'; pos: Vec2 }
   | { type: 'win' };
@@ -138,7 +135,6 @@ export interface GameState {
   /** Whether the fort's hand-off crew has been hired; derived from the distributor pad on load. */
   distributorActive: boolean;
   zonesOpen: Record<ZoneId, boolean>;
-  rescued: number;
   won: boolean;
   stats: { chops: number; bearsKilled: number; earned: number };
   events: GameEvent[];

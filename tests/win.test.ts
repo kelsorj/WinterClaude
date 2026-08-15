@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { winTick } from '../src/game/systems/win';
 import { update } from '../src/game/update';
 import { v } from '../src/game/math';
-import { aCrew, aPad, aVillager, blankState } from './helpers';
+import { createInitialState } from '../src/game/init';
+import { aCrew, aMiner, aPad, blankState } from './helpers';
 
 describe('winTick', () => {
-  it('wins when all pads are done and all villagers rescued', () => {
+  it('wins when every pad is done', () => {
     const state = blankState();
-    state.pads.push(aPad({ done: true }));
-    state.villagers.push(aVillager({ state: 'hauler' }));
+    state.pads.push(aPad({ done: true }), aPad({ id: 'p2', done: true }));
     winTick(state);
     expect(state.won).toBe(true);
     expect(state.events.filter((e) => e.type === 'win')).toHaveLength(1);
@@ -16,24 +16,38 @@ describe('winTick', () => {
     expect(state.events.filter((e) => e.type === 'win')).toHaveLength(1);
   });
 
-  it('ignores the fort crew when checking the snowfield is empty', () => {
+  it('does not win while a pad is unpaid', () => {
     const state = blankState();
-    state.pads.push(aPad({ done: true }));
-    state.villagers.push(aCrew(), aVillager({ id: 'v1', state: 'frozen' }));
-    winTick(state);
-    expect(state.won).toBe(false); // the crew must not stand in for the last frozen villager
-
-    state.villagers[1].state = 'hauler';
-    winTick(state);
-    expect(state.won).toBe(true); // nor block the win once the snowfield is clear
-  });
-
-  it('does not win early', () => {
-    const state = blankState();
-    state.pads.push(aPad({ done: true }));
-    state.villagers.push(aVillager({ state: 'frozen' }));
+    state.pads.push(aPad({ done: true }), aPad({ id: 'p2', done: false }));
     winTick(state);
     expect(state.won).toBe(false);
+  });
+
+  it('never wins an empty campaign', () => {
+    const state = blankState();
+    winTick(state);
+    expect(state.won).toBe(false);
+  });
+
+  it('ignores the fort crews entirely — they are staff, not a win condition', () => {
+    const state = blankState();
+    state.pads.push(aPad({ done: true }));
+    state.villagers.push(aCrew(), aMiner());
+    winTick(state);
+    expect(state.won).toBe(true);
+  });
+
+  it('takes all 18 campaign pads and nothing else', () => {
+    const state = createInitialState();
+    expect(state.pads).toHaveLength(18);
+    for (const pad of state.pads.slice(0, -1)) { pad.done = true; pad.paid = pad.cost; }
+    winTick(state);
+    expect(state.won).toBe(false); // seventeen is not a finished camp
+
+    const last = state.pads[state.pads.length - 1];
+    last.done = true; last.paid = last.cost;
+    winTick(state);
+    expect(state.won).toBe(true);
   });
 });
 

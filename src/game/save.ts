@@ -12,7 +12,6 @@ interface SaveData {
   padsDone: string[];
   padsPaid: Record<string, number>;
   zonesOpen: Partial<Record<ZoneId, boolean>>;
-  thawed: string[];
   /** Ids of permanently felled trees — deforestation is progress and must persist (Amendment 1A). */
   felledTrees: string[];
   depot: GameState['depot'];
@@ -24,10 +23,10 @@ interface SaveData {
 }
 
 /**
- * The depot as it should be written: every hauler's cargo folded back in. Haulers restore
+ * The depot as it should be written: every carrier's cargo folded back in. Carriers restore
  * empty-handed at the depot, so goods in transit would otherwise simply evaporate on reload —
- * with three crew, two miners and forty haulers each able to carry HAUL_AMOUNT, that is up to
- * 129 goods per save. Returns a copy: serializing a running game must never move its resources.
+ * with five crew and two miners each able to carry HAUL_AMOUNT, that is up to 21 goods per save.
+ * Returns a copy: serializing a running game must never move its resources.
  */
 function conservedDepot(state: GameState): GameState['depot'] {
   const depot = { ...state.depot };
@@ -45,10 +44,6 @@ export function serialize(state: GameState): string {
     padsDone: state.pads.filter((p) => p.done).map((p) => p.id),
     padsPaid: Object.fromEntries(state.pads.filter((p) => !p.done && p.paid > 0).map((p) => [p.id, p.paid])),
     zonesOpen: state.zonesOpen,
-    // Crew are never frozen and never rescued, so they must stay out of this list or reloading
-    // would credit the player with three rescues they never made.
-    thawed: state.villagers
-      .filter((v) => v.kind === 'rescued' && v.state !== 'frozen').map((v) => v.id),
     felledTrees: state.trees.filter((t) => t.respawn > 0).map((t) => t.id),
     depot: conservedDepot(state),
     machineOutputs: Object.fromEntries([
@@ -76,7 +71,7 @@ export function serialize(state: GameState): string {
 export function deserialize(json: string, previous?: GameState): GameState {
   const data = JSON.parse(json) as SaveData;
   if (!data || !data.player || !data.depot || !data.stats
-    || !Array.isArray(data.padsDone) || !Array.isArray(data.thawed) || !data.machineOutputs) {
+    || !Array.isArray(data.padsDone) || !data.machineOutputs) {
     throw new Error('unrecognized save shape');
   }
   const state = createInitialState();
@@ -108,13 +103,9 @@ export function deserialize(json: string, previous?: GameState): GameState {
   for (const tree of state.trees) {
     if (felled.has(tree.id)) { tree.respawn = FELLED; tree.hp = 0; }
   }
-  for (const vil of state.villagers) {
-    if (vil.kind === 'rescued' && data.thawed.includes(vil.id)) {
-      vil.state = 'hauler';
-      vil.pos = { x: state.depotPos.x, z: state.depotPos.z };
-    }
-  }
-  state.rescued = data.thawed.length;
+  // Villagers are entirely derived now — the crew from the distributor pad, the miners from the
+  // camp tier — so nothing about them is read back. Saves written before Amendment 4C carry a
+  // `thawed` list of snowfield villagers that no longer exist; it is simply ignored.
   state.depot = data.depot;
   for (const t of state.turrets) t.output = data.machineOutputs?.[t.id] ?? 0;
   for (const s of state.sawmills) s.output = data.machineOutputs?.[s.id] ?? 0;

@@ -15,9 +15,6 @@ describe('save round-trip', () => {
     state.zonesOpen.deepforest = true;
     const padIds = ['p-axe', 'p-gate-deep', 'p-turret1'];
     for (const pad of state.pads) if (padIds.includes(pad.id)) { pad.done = true; pad.paid = pad.cost; }
-    state.villagers[0].state = 'hauler';
-    state.villagers[1].state = 'walking';
-    state.rescued = 2;
     state.depot.meat = 9;
     state.turrets[0].output = 5;
     state.stats = { chops: 10, bearsKilled: 3, earned: 200 };
@@ -36,10 +33,6 @@ describe('save round-trip', () => {
     expect(restored.zonesOpen.deepforest).toBe(true);
     expect(restored.pads.filter((p) => p.done).map((p) => p.id).sort()).toEqual([...padIds].sort());
     expect(restored.turrets.find((t) => t.id === 'turret1')?.active).toBe(true); // derived from pad
-    expect(restored.rescued).toBe(2);
-    // mid-walk villagers restore as haulers at the depot — acceptable per spec
-    expect(restored.villagers.filter((v) => v.kind === 'rescued' && v.state !== 'frozen'))
-      .toHaveLength(2);
     expect(restored.depot.meat).toBe(9);
     expect(restored.turrets[0].output).toBe(5);
     expect(restored.stats.earned).toBe(200);
@@ -84,32 +77,50 @@ describe('save round-trip', () => {
     expect(deserialize(JSON.stringify(legacy)).stations[0].stock).toBe(0);
   });
 
-  it('derives the fort crew from the distributor pad and keeps them out of the rescue count', () => {
+  it('derives the fort crew from the distributor pad', () => {
     const fresh = deserialize(serialize(createInitialState()));
     expect(fresh.distributorActive).toBe(false);
-    expect(fresh.rescued).toBe(0);
-    expect(fresh.villagers.filter((v) => v.kind === 'crew')).toHaveLength(3);
+    expect(fresh.villagers.filter((v) => v.kind === 'crew')).toHaveLength(5);
 
     const state = createInitialState();
     const pad = state.pads.find((p) => p.effect.type === 'distributor')!;
     pad.done = true; pad.paid = pad.cost;
-    state.villagers[0].state = 'hauler';
-    state.rescued = 1;
     const restored = deserialize(serialize(state));
     expect(restored.distributorActive).toBe(true);
-    expect(restored.rescued).toBe(1); // the three crew are not rescues
-    expect(restored.villagers.filter((v) => v.kind === 'crew').every((v) => v.state === 'hauler'))
-      .toBe(true);
+    // Villagers are entirely derived: nothing about them is written to the save.
+    expect(serialize(state)).not.toContain('crew0');
   });
 
-  it('folds hauler cargo back into the depot instead of evaporating it', () => {
+  it('loads a pre-4C save with a snowfield in it, ignoring the field', () => {
+    const state = createInitialState();
+    state.depot.wood = 7;
+    const legacy = JSON.parse(serialize(state)) as Record<string, unknown>;
+    // Exactly what a save written before Amendment 4C carried: forty thawed villager ids.
+    legacy.thawed = Array.from({ length: 40 }, (_, i) => `vil${i}`);
+
+    const restored = deserialize(JSON.stringify(legacy));
+
+    expect(restored.villagers.map((v) => v.kind).sort())
+      .toEqual(['crew', 'crew', 'crew', 'crew', 'crew', 'miner', 'miner']);
+    expect(restored.villagers.some((v) => v.id.startsWith('vil'))).toBe(false);
+    expect(restored.depot.wood).toBe(7); // and the rest of the save comes through untouched
+    expect('rescued' in restored).toBe(false);
+  });
+
+  it('writes no rescue field of its own', () => {
+    const json = serialize(createInitialState());
+    expect(json).not.toContain('thawed');
+    expect(json).not.toContain('rescued');
+  });
+
+  it('folds carrier cargo back into the depot instead of evaporating it', () => {
     const state = createInitialState();
     state.depot.wood = 4;
     state.depot.meat = 1;
-    const hauler = state.villagers.find((v) => v.kind === 'rescued')!;
-    hauler.state = 'hauler'; hauler.carrying = 'wood'; hauler.amount = 3;
-    const crew = state.villagers.find((v) => v.kind === 'crew')!;
-    crew.carrying = 'meat'; crew.amount = 2;
+    const hauler = state.villagers.find((v) => v.kind === 'crew')!;
+    hauler.carrying = 'wood'; hauler.amount = 3;
+    const miner = state.villagers.find((v) => v.kind === 'miner')!;
+    miner.carrying = 'meat'; miner.amount = 2;
     const goods = (s: typeof state): number => s.depot.wood + s.depot.meat + s.depot.gold
       + s.villagers.reduce((n, v) => n + (v.carrying ? v.amount : 0), 0);
 
@@ -132,15 +143,14 @@ describe('save round-trip', () => {
     camp4.done = true; camp4.paid = camp4.cost;
     state.campTier = 4;
     const miner = state.villagers.find((v) => v.kind === 'miner')!;
-    miner.target = 'seam3'; // mid-cycle claims are transient, like a hauler's cargo route
+    miner.target = 'seam3'; // mid-cycle claims are transient, like a carrier's cargo route
 
     const restored = deserialize(serialize(state));
 
     expect(restored.campTier).toBe(4);
     const miners = restored.villagers.filter((v) => v.kind === 'miner');
     expect(miners).toHaveLength(2);
-    expect(miners.every((v) => v.state === 'hauler' && v.target === null)).toBe(true);
-    expect(restored.rescued).toBe(0); // miners are staff, never rescues
+    expect(miners.every((v) => v.target === null)).toBe(true);
     expect(serialize(state)).not.toContain('miner0');
   });
 

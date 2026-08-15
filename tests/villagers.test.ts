@@ -3,47 +3,35 @@ import { villagersTick } from '../src/game/systems/villagers';
 import { MINER_CAMP_TIER, SEAM_YIELD } from '../src/content/balance';
 import { ZONE_RECTS } from '../src/content/map';
 import { v } from '../src/game/math';
-import { aCrew, aMiner, aSeam, aStation, aVillager, blankState } from './helpers';
+import { aCrew, aMiner, aSeam, aStation, blankState } from './helpers';
 
 function ticks(state: ReturnType<typeof blankState>, seconds: number): void {
   const dt = 1 / 60;
   for (let t = 0; t < seconds; t += dt) villagersTick(state, dt);
 }
 
+/** A hired crew with a short depot → bench route, which is all a hauling test needs. */
+function hiredCrew(): ReturnType<typeof blankState> {
+  const state = blankState();
+  state.depotPos = v(3, 0);
+  state.distributorActive = true;
+  return state;
+}
+
 describe('villagersTick', () => {
-  it('thaws a frozen villager for meat', () => {
-    const state = blankState();
-    state.villagers.push(aVillager()); // at (0,1), player at origin; cost = thawCost(0) = 2
-    state.player.carry.meat = 5;
-    ticks(state, 0.1);
-    expect(state.villagers[0].state).toBe('walking');
-    expect(state.player.carry.meat).toBe(3);
-    expect(state.rescued).toBe(1);
-    expect(state.events.some((e) => e.type === 'thaw')).toBe(true);
-  });
-
-  it('does not thaw without enough meat', () => {
-    const state = blankState();
-    state.villagers.push(aVillager());
-    state.player.carry.meat = 1;
-    ticks(state, 0.5);
-    expect(state.villagers[0].state).toBe('frozen');
-    expect(state.rescued).toBe(0);
-  });
-
-  it('walking villagers reach camp and become haulers', () => {
-    const state = blankState();
-    state.villagers.push(aVillager({ state: 'walking', pos: v(15, 4.4) })); // CAMP_POS is (18,4.4)
+  it('leaves the player alone: meat buys nothing from a villager any more', () => {
+    const state = hiredCrew();
+    state.player.carry.meat = 20;
+    state.villagers.push(aCrew({ pos: v(0, 0.5) })); // right on top of the player
     ticks(state, 2);
-    expect(state.villagers[0].state).toBe('hauler');
+    expect(state.player.carry.meat).toBe(20);
   });
 
-  it('haulers ferry depot goods onto the matching bench as stock', () => {
-    const state = blankState();
-    state.depotPos = v(3, 0); // short test route: depot (3,0) → wood station (0,1)
+  it('the crew ferries depot goods onto the matching bench as stock', () => {
+    const state = hiredCrew(); // short test route: depot (3,0) → wood station (0,1)
     state.depot.wood = 6;
     state.stations.push(aStation());
-    state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) })); // at depot
+    state.villagers.push(aCrew({ pos: v(3, 0) })); // at depot
     ticks(state, 8); // two short round trips at speed 3
     expect(state.depot.wood).toBe(0);
     // Hauled goods go on the shelf; the cash arrives later, when customers buy them.
@@ -63,43 +51,18 @@ describe('villagersTick', () => {
     expect(state.stations[0].stock).toBe(0);
   });
 
-  it('the crew hauls depot goods to the benches once hired', () => {
-    const state = blankState();
-    state.depotPos = v(3, 0);
-    state.depot.wood = 6;
-    state.distributorActive = true;
-    state.stations.push(aStation());
-    state.villagers.push(aCrew({ pos: v(3, 0) }));
-    ticks(state, 8);
-    expect(state.depot.wood).toBe(0);
-    expect(state.stations[0].stock).toBe(6);
-  });
-
-  it('never counts crew as rescued, thawed or frozen', () => {
-    const state = blankState();
-    state.distributorActive = true;
-    state.player.carry.meat = 20;
-    state.villagers.push(aCrew({ pos: v(0, 0.5) })); // right on top of the player
-    ticks(state, 2);
-    expect(state.rescued).toBe(0);
-    expect(state.player.carry.meat).toBe(20);
-    expect(state.villagers[0].state).toBe('hauler');
-  });
-
-  it('never counts miners as rescued, thawed or frozen', () => {
+  it('miners work off the camp tier, not the distributor pad', () => {
     const state = blankState();
     state.campTier = MINER_CAMP_TIER;
-    state.player.carry.meat = 20;
-    state.villagers.push(aMiner({ pos: v(0, 0.5) })); // right on top of the player
-    ticks(state, 2);
-    expect(state.rescued).toBe(0);
-    expect(state.player.carry.meat).toBe(20);
-    expect(state.villagers[0].state).toBe('hauler');
+    state.seams.push(aSeam({ id: 'seam0', pos: v(6, 0) }));
+    state.villagers.push(aMiner({ pos: v(0, 0) }));
+    expect(state.distributorActive).toBe(false);
+    ticks(state, 5);
+    expect(state.villagers[0].target).toBe('seam0');
   });
 
   it('rotates a carrier over every non-empty pile instead of always taking the biggest', () => {
-    const state = blankState();
-    state.depotPos = v(3, 0);
+    const state = hiredCrew();
     // Meat and wood dominate; under the old largest-pile rule the 3 gold never moved.
     state.depot = { wood: 100, meat: 100, gold: 3 };
     state.stations.push(
@@ -107,7 +70,7 @@ describe('villagersTick', () => {
       aStation({ id: 's-meat', resource: 'meat', pos: v(0, -1), matPos: v(2, -1) }),
       aStation({ id: 's-gold', resource: 'gold', pos: v(1, 2), matPos: v(3, 2) }),
     );
-    state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) }));
+    state.villagers.push(aCrew({ pos: v(3, 0) }));
     const vil = state.villagers[0];
 
     const trips: string[] = [];
@@ -123,35 +86,32 @@ describe('villagersTick', () => {
   });
 
   it('gets gold onto the gold bench even when meat and wood dominate the depot', () => {
-    const state = blankState();
-    state.depotPos = v(3, 0);
+    const state = hiredCrew();
     state.depot = { wood: 100, meat: 100, gold: 3 };
     state.stations.push(
       aStation({ id: 's-wood', resource: 'wood' }),
       aStation({ id: 's-meat', resource: 'meat', pos: v(0, -1), matPos: v(2, -1) }),
       aStation({ id: 's-gold', resource: 'gold', pos: v(1, 2), matPos: v(3, 2) }),
     );
-    state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) }));
+    state.villagers.push(aCrew({ pos: v(3, 0) }));
     ticks(state, 30);
     expect(state.stations.find((s) => s.resource === 'gold')!.stock).toBe(3);
     expect(state.depot.gold).toBe(0);
   });
 
   it('skips empty piles rather than stalling a trip on them', () => {
-    const state = blankState();
-    state.depotPos = v(3, 0);
+    const state = hiredCrew();
     state.depot = { wood: 0, meat: 0, gold: 6 };
     state.stations.push(aStation({ id: 's-gold', resource: 'gold' }));
-    state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) }));
+    state.villagers.push(aCrew({ pos: v(3, 0) }));
     ticks(state, 12);
     expect(state.stations[0].stock).toBe(6);
   });
 
-  it('haulers idle at an empty depot', () => {
-    const state = blankState();
-    state.depotPos = v(3, 0);
+  it('carriers idle at an empty depot', () => {
+    const state = hiredCrew();
     state.stations.push(aStation());
-    state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) }));
+    state.villagers.push(aCrew({ pos: v(3, 0) }));
     ticks(state, 2);
     expect(state.villagers[0].carrying).toBeNull();
     expect(state.stations[0].stock).toBe(0);

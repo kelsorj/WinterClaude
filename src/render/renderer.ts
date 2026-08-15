@@ -198,14 +198,6 @@ export class Renderer {
       edge.position.set(0, 0.025, sz * (ROAD_Z - 0.45));
       this.scene.add(edge);
     }
-    // Carved trenches the frozen villagers stand in, as in the ad's snowfield. They sit above
-    // the ground slab, so they have to receive shadows themselves or the villagers standing in
-    // them appear to cast onto nothing.
-    for (let row = 0; row < 5; row++) {
-      const trench = setShadow(makeSlab(40, 0.04, 2.8, COLORS.trench), false, true);
-      trench.position.set(-26, 0.02, 12 + row * 5);
-      this.scene.add(trench);
-    }
     this.buildProps();
     this.buildSnow();
   }
@@ -354,13 +346,8 @@ export class Renderer {
       setShadow(line, true, true);
       this.scene.add(line);
     }
-    // The villager field is bounded by the road fence on its camp side; these close the far
-    // west and south edges so the snowfield does not just run off into nothing.
-    const field = new THREE.Group();
-    field.add(makeFenceRun(9, 35, 'z', -48));
-    field.add(makeFenceRun(-48, -6, 'x', 35));
-    setShadow(field, true, true);
-    this.scene.add(field);
+    // The snowfield west of the camp used to be fenced off as the frozen villagers' field; with
+    // the field gone (Amendment 4C) it is plain open snow, so nothing encloses it.
   }
 
   /**
@@ -635,16 +622,13 @@ export class Renderer {
     for (let i = 0; i < state.villagers.length; i++) {
       const vil = state.villagers[i];
       const m = this.ensure(vil.id, () => setShadow(makeVillager(vil.kind), true));
-      const frozen = vil.state === 'frozen';
-      // Haulers all converge on the same logic positions; nudge each one off the pile so the
-      // crowd reads as individuals. Frozen rows stay on their exact grid.
-      const jx = frozen ? 0 : (((i * 37) % 11) - 5) * 0.12;
-      const jz = frozen ? 0 : (((i * 53) % 11) - 5) * 0.12;
-      const bob = frozen ? 0 : Math.abs(Math.sin(this.t * 8 + i)) * 0.08;
+      // Carriers all converge on the same logic positions (the depot, a bench); nudge each one
+      // off the pile so the crowd reads as individuals rather than one body.
+      const jx = (((i * 37) % 11) - 5) * 0.12;
+      const jz = (((i * 53) % 11) - 5) * 0.12;
+      const bob = Math.abs(Math.sin(this.t * 8 + i)) * 0.08;
       m.position.set(vil.pos.x + jx, bob, vil.pos.z + jz);
       const refs = refsOf<VillagerRefs>(m);
-      refs.ice.visible = frozen;
-      refs.frost.visible = frozen;
       refs.load.visible = vil.carrying !== null;
       if (vil.carrying) refs.load.material = lam(COLORS[vil.carrying]);
     }
@@ -824,7 +808,6 @@ export class Renderer {
       let sprite: THREE.Sprite | null = null;
       if (e.type === 'sell') sprite = makeIconTextLabel('cash', `+${e.cash}`);
       else if (e.type === 'unlock') sprite = makeTextLabel('Unlocked!');
-      else if (e.type === 'thaw') sprite = makeTextLabel('+1 rescued');
       if (sprite && 'pos' in e) {
         // Concurrent floats from the same bench would overlap into an unreadable smear;
         // fan them out deterministically instead.

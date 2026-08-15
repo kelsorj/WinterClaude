@@ -47,9 +47,11 @@ export const SEAM_RESPAWN = 25;
 
 export const BEAR_HP = 6;
 /**
- * Spec allows 2–4. Sits at the top of the range because thawing all 40 villagers costs 160 meat
- * that only the player's own kills can supply: at 3 that is 54 bear kills against a 30 s respawn,
- * which measured as an 11-minute endgame with nothing left to unlock. At 4 it is 40 kills.
+ * Spec allows 2–4. It went to the top of the range to pay for thawing forty villagers; that meat
+ * sink is gone with the snowfield (Amendment 4C) and meat is now a pure commodity, but the value
+ * stays at 4 because the rest of the campaign is balanced against it — the hunting gate costs 20
+ * meat and the meat bench's shopper income is priced off this yield. Trimming it would be a
+ * re-tune of the whole meat economy, not a tidy-up.
  */
 export const BEAR_MEAT = 4;
 export const BEAR_RESPAWN = 30;
@@ -67,7 +69,6 @@ export const CART_SPEED = 5;
 export const CART_CAP = 6;
 
 export const VILLAGER_SPEED = 3;
-export const VILLAGER_RANGE = 1.8;
 export const HAUL_AMOUNT = 3;
 
 /**
@@ -111,8 +112,3 @@ export const CUSTOMER_QUEUE_CAP = 12;
 export const CUSTOMER_SPEED = 4.2;
 export const CUSTOMER_DWELL = 0.8;
 export const CUSTOMER_TAKE = 3;
-
-/** Meat cost to thaw the next villager: 2,2,…,6 across the 40 rescues. */
-export function thawCost(rescued: number): number {
-  return 2 + Math.floor(rescued / 8);
-}

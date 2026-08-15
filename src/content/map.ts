@@ -3,8 +3,8 @@ import type { GateZone, Pad, Rail, Sawmill, SellStation, Turret, ZoneId } from '
 
 /**
  * The 10× world (Amendment 3B). Everything the campaign is made of — camp, road, gated zones,
- * rails, fences, the villager field — stays exactly where it was authored, inside `ORIGINAL_MAP`;
- * these bounds add open snowy wilderness in a ring around it.
+ * rails, fences — stays exactly where it was authored, inside `ORIGINAL_MAP`; these bounds add
+ * open snowy wilderness in a ring around it.
  */
 export const WORLD_BOUNDS: Rect = { x0: -190, z0: -125, x1: 190, z1: 125 };
 
@@ -56,13 +56,6 @@ export const ZONE_RECTS: Record<GateZone, Rect> = {
 
 export const PLAYER_SPAWN: Vec2 = v(0, 0);
 export const DEPOT_POS: Vec2 = v(18, 0);
-/**
- * Where thawed villagers walk to: outside the camp building's south face, which is the approach
- * at every tier. What sits there varies — tiers 0-1 have no south wall at all, tier 2 closes it
- * with a barn door, tier 3 leaves a gap at z ≈ 3.8 and tier 4 at z ≈ 4.3 — so this stands clear
- * of all five rather than aiming at any one doorway.
- */
-export const CAMP_POS: Vec2 = v(18, 4.4);
 
 /**
  * The forest is finite: nothing regrows, so it has to be big enough that the whole campaign's
@@ -148,11 +141,15 @@ export function seamDefs(): { pos: Vec2; zone: ZoneId }[] {
 }
 
 /**
- * The fort's hand-off crew (Amendment 2B). Three posts inside the camp yard, south of the depot
- * stockpiles at every tier, where they stand idle until the distributor pad is bought.
+ * The fort's hand-off crew (Amendment 2B), grown from three to five now that they are the camp's
+ * only carriers and no rescued villagers haul alongside them (Amendment 4C). Posts inside the
+ * camp yard where they stand idle until the distributor pad is bought: an arc south of centre
+ * plus two deeper in the yard. All five clear the camp's south doorway (camp-local |x| < 1.9 at
+ * z > 2.8 at the tiers that wall it), which is the way the player walks in, and the miners'
+ * column on the west side.
  */
 export function crewDefs(): Vec2[] {
-  return [v(16.4, 1.7), v(18.0, 2.3), v(19.6, 1.7)];
+  return [v(16.4, 1.7), v(18.0, 2.3), v(19.6, 1.7), v(16.6, -0.4), v(19.4, -0.4)];
 }
 
 /**
@@ -162,14 +159,6 @@ export function crewDefs(): Vec2[] {
  */
 export function minerDefs(): Vec2[] {
   return [v(15.4, 1.2), v(15.4, 2.8)];
-}
-
-export function villagerDefs(): Vec2[] {
-  const defs: Vec2[] = [];
-  for (let i = 0; i < 8; i++)
-    for (let j = 0; j < 5; j++)
-      defs.push(v(-44 + i * 5, 12 + j * 5));
-  return defs;
 }
 
 export function stationDefs(): SellStation[] {

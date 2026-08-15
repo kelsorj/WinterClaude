@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../src/game/init';
-import { MINER_CAMP_TIER, PAD_RANGE, SELL_RATE, TREE_YIELD, thawCost } from '../src/content/balance';
+import { MINER_CAMP_TIER, PAD_RANGE, SELL_RATE, TREE_YIELD } from '../src/content/balance';
 import type { ZoneId } from '../src/game/state';
-import { ORIGINAL_MAP, WORLD_BOUNDS, ZONE_RECTS, villagerDefs } from '../src/content/map';
+import { ORIGINAL_MAP, WORLD_BOUNDS, ZONE_RECTS } from '../src/content/map';
 import { dist, inRect } from '../src/game/math';
 
 describe('createInitialState', () => {
@@ -15,9 +15,11 @@ describe('createInitialState', () => {
     expect(state.pads.length).toBe(18);
     expect(state.bears.length).toBeGreaterThanOrEqual(55);
     expect(state.seams.length).toBeGreaterThanOrEqual(18);
-    expect(state.villagers.filter((v) => v.kind === 'rescued').length).toBe(40);
-    expect(state.villagers.filter((v) => v.kind === 'crew').length).toBe(3);
+    // The snowfield of rescuable villagers is gone (Amendment 4C): the fort's own staff is all
+    // there is, and the hand-off crew grew to five to cover the hauling the rescues provided.
+    expect(state.villagers.filter((v) => v.kind === 'crew').length).toBe(5);
     expect(state.villagers.filter((v) => v.kind === 'miner').length).toBe(2);
+    expect(state.villagers).toHaveLength(7);
     expect(state.stations.map((s) => s.resource).sort()).toEqual(['gold', 'meat', 'wood']);
     expect(state.turrets.length).toBe(2);
     expect(state.sawmills.length).toBe(1);
@@ -56,12 +58,18 @@ describe('createInitialState', () => {
     expect(padMachineIds.sort()).toEqual(['sawmill1', 'turret1', 'turret2']);
   });
 
-  it('starts the fort crew idle inside the camp, never frozen', () => {
+  it('starts the fort crew idle inside the camp', () => {
     const crew = state.villagers.filter((v) => v.kind === 'crew');
     expect(state.distributorActive).toBe(false);
     for (const c of crew) {
-      expect(c.state).toBe('hauler');
+      expect(c.carrying).toBeNull();
       expect(dist(c.pos, state.depotPos)).toBeLessThan(4);
+    }
+    // Posts are distinct, and none of them stands in the camp's south doorway — the way in.
+    expect(new Set(crew.map((c) => `${c.pos.x},${c.pos.z}`)).size).toBe(crew.length);
+    for (const c of crew) {
+      const local = { x: c.pos.x - state.depotPos.x, z: c.pos.z - state.depotPos.z };
+      expect(Math.abs(local.x) < 1.9 && local.z > 2.8).toBe(false);
     }
     // Exactly one pad hires them, and it hangs off the Fort.
     const pads = state.pads.filter((p) => p.effect.type === 'distributor');
@@ -74,7 +82,7 @@ describe('createInitialState', () => {
     const miners = state.villagers.filter((v) => v.kind === 'miner');
     expect(state.campTier).toBeLessThan(MINER_CAMP_TIER);
     for (const m of miners) {
-      expect(m.state).toBe('hauler');
+      expect(m.carrying).toBeNull();
       expect(m.target).toBeNull();
       expect(dist(m.pos, state.depotPos)).toBeLessThan(4);
     }
@@ -126,11 +134,6 @@ describe('createInitialState', () => {
     expect(state.player.hasPickaxe).toBe(false);
   });
 
-  it('thaw cost rises 2→6 across 40 villagers', () => {
-    expect(thawCost(0)).toBe(2);
-    expect(thawCost(39)).toBe(6);
-  });
-
   it('pad requires graph is acyclic and every pad is reachable', () => {
     const done = new Set<string>();
     let progress = true;
@@ -160,7 +163,7 @@ describe('createInitialState', () => {
     }
   });
 
-  it('keeps the wilderness inside the world, off the road and out of the villager field', () => {
+  it('keeps the wilderness inside the world and off the road', () => {
     const scenery = [...state.trees, ...state.bears, ...state.seams];
     for (const e of scenery) expect(inRect(e.pos, WORLD_BOUNDS)).toBe(true);
 
@@ -170,14 +173,6 @@ describe('createInitialState', () => {
       expect(Math.abs(e.pos.z)).toBeGreaterThan(9); // clear of the road the shoppers walk
       expect(e.zone).toBe('start');                 // open country: no gate stands between
     }
-
-    // Nothing may land in the snowfield the frozen villagers are laid out in.
-    const field = villagerDefs();
-    const bound = {
-      x0: Math.min(...field.map((p) => p.x)) - 3, x1: Math.max(...field.map((p) => p.x)) + 3,
-      z0: Math.min(...field.map((p) => p.z)) - 3, z1: Math.max(...field.map((p) => p.z)) + 3,
-    };
-    for (const e of scenery) expect(inRect(e.pos, bound)).toBe(false);
   });
 
   it('puts gold outcrops out in the open, not only behind the quarry gate', () => {

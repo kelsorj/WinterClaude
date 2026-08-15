@@ -3,7 +3,7 @@ import {
 } from '../content/balance';
 import {
   DEPOT_POS, PLAYER_SPAWN, bearDefs, crewDefs, minerDefs, padDefs, railDefs, sawmillDefs,
-  seamDefs, stationDefs, treeDefs, turretDefs, villagerDefs,
+  seamDefs, stationDefs, treeDefs, turretDefs,
 } from '../content/map';
 import { v } from './math';
 import type { GameState } from './state';
@@ -38,32 +38,25 @@ export function createInitialState(): GameState {
     depotPos: v(DEPOT_POS.x, DEPOT_POS.z),
     depotTimer: 0,
     villagers: [
-      ...villagerDefs().map((p, i) => ({
-        id: `vil${i}`, kind: 'rescued' as const, pos: v(p.x, p.z),
-        state: 'frozen' as const, carrying: null, amount: 0, target: null,
-        rotation: i % HAUL_ORDER.length,
-      })),
       // The crew is on site from the first frame — they simply have no job until the fort's
       // distributor pad is bought, which is what makes buying it read as hiring them. Their
       // hauling rotations start staggered so the very first round of trips already fans out
       // across the depot's piles rather than all five queueing at the same one.
       ...crewDefs().map((p, i) => ({
         id: `crew${i}`, kind: 'crew' as const, pos: v(p.x, p.z),
-        state: 'hauler' as const, carrying: null, amount: 0, target: null,
-        rotation: i % HAUL_ORDER.length,
+        carrying: null, amount: 0, target: null, rotation: i % HAUL_ORDER.length,
       })),
       // Likewise the miners: on site, pickaxes in hand, with nothing to mine for until the
       // Grand Fort goes up. Their activation is read off `campTier`, so it needs no save field.
       ...minerDefs().map((p, i) => ({
         id: `miner${i}`, kind: 'miner' as const, pos: v(p.x, p.z),
-        state: 'hauler' as const, carrying: null, amount: 0, target: null,
-        rotation: i % HAUL_ORDER.length,
+        carrying: null, amount: 0, target: null, rotation: i % HAUL_ORDER.length,
       })),
     ],
     campTier: 0,
     distributorActive: false,
     zonesOpen: { start: true, deepforest: false, hunting: false, quarry: false },
-    rescued: 0, won: false,
+    won: false,
     stats: { chops: 0, bearsKilled: 0, earned: 0 },
     events: [],
     nextDropId: 1,

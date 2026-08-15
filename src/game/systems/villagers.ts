@@ -1,34 +1,21 @@
 import {
   HAUL_AMOUNT, HAUL_ORDER, MINER_CAMP_TIER, MINER_DRAIN, MINER_RANGE, SEAM_RESPAWN, SEAM_YIELD,
-  VILLAGER_RANGE, VILLAGER_SPEED, thawCost,
+  VILLAGER_SPEED,
 } from '../../content/balance';
-import { CAMP_POS } from '../../content/map';
-import { dist, toward, v } from '../math';
+import { dist, toward } from '../math';
 import { blockedByZones, pathBlocked } from './movement';
 import { depositToStation } from './stations';
-import type { GameState, GoldSeam, ResourceKind, Villager } from '../state';
+import type { GameState, GoldSeam, Villager } from '../state';
 
+/**
+ * The fort's two work crews, and nothing else — since Amendment 4C there are no rescued
+ * villagers to thaw or walk home. Miners answer to the Grand Fort's tier; the hand-off crew
+ * stands at its post in the yard until the distributor pad hires it.
+ */
 export function villagersTick(state: GameState, dt: number): void {
-  const p = state.player;
   for (const vil of state.villagers) {
-    if (vil.state === 'frozen') {
-      const cost = thawCost(state.rescued);
-      if (dist(p.pos, vil.pos) < VILLAGER_RANGE && p.carry.meat >= cost) {
-        p.carry.meat -= cost;
-        vil.state = 'walking';
-        state.rescued++;
-        state.events.push({ type: 'thaw', pos: v(vil.pos.x, vil.pos.z) });
-      }
-    } else if (vil.state === 'walking') {
-      vil.pos = toward(vil.pos, CAMP_POS, VILLAGER_SPEED * dt);
-      if (dist(vil.pos, CAMP_POS) < 0.5) vil.state = 'hauler';
-    } else if (vil.kind === 'miner') {
-      minerTick(state, vil, dt);
-    } else {
-      // The fort crew stands at its post until hired; rescued villagers always haul.
-      if (vil.kind === 'crew' && !state.distributorActive) continue;
-      haulerTick(state, vil, dt);
-    }
+    if (vil.kind === 'miner') minerTick(state, vil, dt);
+    else if (state.distributorActive) haulerTick(state, vil, dt);
   }
 }
 

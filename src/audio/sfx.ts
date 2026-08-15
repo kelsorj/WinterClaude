@@ -62,7 +62,6 @@ function playOne(type: GameEvent['type'], scale: number): void {
       beep(659, 0.1, 'sine', 0.14 * scale, 0, 0.09);
       beep(784, 0.16, 'sine', 0.14 * scale, 0, 0.18);
       break;
-    case 'thaw': beep(660, 0.15, 'triangle', 0.14 * scale, 180); break;
     case 'bearHit': beep(140, 0.08, 'sawtooth', 0.09 * scale); break;
     case 'playerHit': beep(90, 0.15, 'sawtooth', 0.13 * scale, -30); break;
     case 'win':

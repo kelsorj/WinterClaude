@@ -17,6 +17,20 @@ export const MAGNET_SPEED = 8;
 
 export const DEPOSIT_RATE = 8;   // items per second into sell stations
 export const PAY_RATE = 12;      // currency per second into unlock pads
+
+/**
+ * Ceiling on how long a cash pad can take to fill, in seconds of standing on it. A cash pad
+ * streams at `max(PAY_RATE, cost / TARGET_PAY_SECONDS)`, so the campaign's small pads are
+ * untouched (anything under 300 still runs at the flat `PAY_RATE`) while the expedition's
+ * exponential price cannot turn into exponential standing still — at a flat 12/s the sixteenth
+ * ring would be five hours of holding a key down.
+ *
+ * The gate on an expensive pad is meant to be HAVING the cash, which is the shop economy doing
+ * its job; the pad itself is a till, and no till should take longer than this to count out.
+ * Resource-priced pads keep the flat rate: they pay in whole units off a 12-48 item pack, so
+ * they are all small by construction and a faster stream would just empty the pack in one gulp.
+ */
+export const TARGET_PAY_SECONDS = 25;
 export const STATION_RANGE = 2.2;
 export const PAD_RANGE = 1.8;
 
@@ -81,8 +95,14 @@ export const HAUL_ORDER: ResourceKind[] = ['wood', 'meat', 'gold'];
 /**
  * Grand Fort miners (Amendment 3A). They work a seam far slower than the player does with a
  * pickaxe (an axe swing lands 2 damage every 0.45 s, i.e. ~4.4/s) — at 1 hp/s a seam takes
- * `SEAM_HP` = 4 seconds, the "a few seconds" the amendment asks for, and two miners against a
- * 25 s seam respawn keep the gold pipeline trickling rather than flooding it.
+ * `SEAM_HP` = 4 seconds, the "a few seconds" the amendment asks for.
+ *
+ * What actually paces the gold pipeline is the WALK, not `SEAM_RESPAWN`. A miner's round trip is
+ * camp → nearest seam → camp: the quarry seams sit 55-75 units from the depot, so at
+ * `VILLAGER_SPEED` 3 that is 36-54 s of walking against 4 s of mining, and two miners measure out
+ * at roughly 2.6 gold/minute between them. The 25 s respawn never binds — by the time a miner is
+ * back at the rock it has long since regrown. Speeding the drain up would not move the throughput;
+ * only shortening the trip or hiring more miners would.
  */
 export const MINER_CAMP_TIER = 4;
 export const MINER_DRAIN = 1;
@@ -107,6 +127,12 @@ export const MINER_RANGE = 1.6;
  * ever forms. At 12 the road carries a single-file stream (0.6 s apart is ~2.5 units of spacing)
  * and 4-6 shoppers stand waiting at a busy bench, matching the reference frames.
  */
+export const CUSTOMER_INTERVAL = 0.6;
+export const CUSTOMER_QUEUE_CAP = 12;
+export const CUSTOMER_SPEED = 4.2;
+export const CUSTOMER_DWELL = 0.8;
+export const CUSTOMER_TAKE = 3;
+
 /**
  * The expedition pad (Amendment 5B) — the one repeatable pad, and the only thing late-game cash
  * has left to buy once the eighteen campaign unlocks are done.
@@ -121,8 +147,10 @@ export const MINER_RANGE = 1.6;
 export const EXPEDITION_BASE = 200;
 export const EXPEDITION_GROWTH = 1.6;
 
-export const CUSTOMER_INTERVAL = 0.6;
-export const CUSTOMER_QUEUE_CAP = 12;
-export const CUSTOMER_SPEED = 4.2;
-export const CUSTOMER_DWELL = 0.8;
-export const CUSTOMER_TAKE = 3;
+/**
+ * Hard ceiling on the ring count a save may claim. Loading replays `applyExpansion` once per
+ * ring, so a corrupt or hand-edited `expansions` would otherwise hang the load generating
+ * millions of trees. 200 rings is a 12,000-unit-wide world — far past anything reachable by
+ * play — so the clamp can only ever fire on a broken save.
+ */
+export const EXPANSIONS_MAX = 200;

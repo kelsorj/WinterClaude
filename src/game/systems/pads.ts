@@ -1,4 +1,4 @@
-import { PAD_RANGE, PAY_RATE } from '../../content/balance';
+import { PAD_RANGE, PAY_RATE, TARGET_PAY_SECONDS } from '../../content/balance';
 import { dist, v } from '../math';
 import { applyExpansion, escalate } from './expansion';
 import type { GameState, Pad } from '../state';
@@ -38,6 +38,16 @@ export function applyEffect(state: GameState, pad: Pad): void {
   } else activateMachine(state, e.machineId);
 }
 
+/**
+ * How fast cash streams into a pad. Flat `PAY_RATE` for anything the campaign prices (every one
+ * of those fills well inside `TARGET_PAY_SECONDS` anyway), scaling with the price above that so
+ * an expensive pad costs the player the money rather than the minutes — the expedition's price
+ * grows exponentially and a flat rate would make the standing still grow with it.
+ */
+function cashRate(pad: Pad): number {
+  return Math.max(PAY_RATE, pad.cost / TARGET_PAY_SECONDS);
+}
+
 export function padsTick(state: GameState, dt: number): void {
   const p = state.player;
   for (const pad of state.pads) {
@@ -45,7 +55,7 @@ export function padsTick(state: GameState, dt: number): void {
     if (dist(p.pos, pad.pos) >= PAD_RANGE) { pad.payTimer = 0; continue; }
     let pay: number;
     if (pad.currency === 'cash') {
-      const want = Math.min(PAY_RATE * dt, pad.cost - pad.paid);
+      const want = Math.min(cashRate(pad) * dt, pad.cost - pad.paid);
       pay = Math.min(want, state.player.cash);
     } else {
       pad.payTimer += PAY_RATE * dt;

@@ -1094,6 +1094,18 @@ function campStockade(g: THREE.Group): void {
   g.add(at(box(0.9, 0.75, 0.9, CAMP_WOOD), 2.4, 0.68, -2.3));
 }
 
+/**
+ * Half-width of `CAMP_FOOTPRINT` in `map.ts`, repeated here because every camp tier has to fit
+ * inside it and the two files cannot import each other. The shoppers' road lanes are routed to
+ * within a quarter-unit of this rect (see the `ROAD_ENDS` comment), so any part of the building
+ * that pokes past it is something a departing buyer walks through. `camp.test.ts` measures every
+ * tier's real geometry against it rather than trusting the numbers below.
+ */
+const CAMP_HALF = 4.3;
+/** Tier-3 gate towers: span and centre chosen so `CAMP_TOWER_AT + CAMP_TOWER_W / 2 === CAMP_HALF`. */
+const CAMP_TOWER_W = 1.2;
+const CAMP_TOWER_AT = CAMP_HALF - CAMP_TOWER_W / 2;
+
 /** Tier 3 — Fort: tall red plank walls, gate towers, interior shelves for the stockpiles. */
 function campFort(g: THREE.Group): void {
   g.add(at(box(8, 0.35, 8, CAMP_LOG), 0, 0.18, 0));
@@ -1118,9 +1130,12 @@ function campFort(g: THREE.Group): void {
   wall(1.0, 3.8, 3.5, Math.PI / 2);
   wall(2.6, -2.7, 3.8, 0); // the south face keeps a gap: that is the way in
   wall(2.6, 2.7, 3.8, 0);
-  for (const tx of [-3.8, 3.8]) {
-    g.add(at(box(1.5, 4.4, 1.5, 0xb0492b), tx, 2.2, 3.8));
-    g.add(at(cone(1.3, 1.4, CAMP_RED_DARK), tx, 5.1, 3.8));
+  // Gate towers, pulled in to sit inside `CAMP_FOOTPRINT`: at their old 1.5 span centred on
+  // ±3.8 they reached ±4.55, and departing shoppers thread the corridor to within 0.25 of the
+  // rect. 1.2 centred on ±3.7 lands exactly on it.
+  for (const tx of [-CAMP_TOWER_AT, CAMP_TOWER_AT]) {
+    g.add(at(box(CAMP_TOWER_W, 4.4, CAMP_TOWER_W, 0xb0492b), tx, 2.2, CAMP_TOWER_AT));
+    g.add(at(cone(1.05, 1.4, CAMP_RED_DARK), tx, 5.1, CAMP_TOWER_AT));
   }
   // Shelving on the north wall: the depot stockpiles sit on the lower shelf.
   for (const sy of [1.0, 2.0]) g.add(at(box(6.4, 0.18, 1.5, CAMP_WOOD), 0, sy, -3.2));
@@ -1128,39 +1143,55 @@ function campFort(g: THREE.Group): void {
 }
 
 /**
- * Tier 4 — Grand Fort: log-cabin courses, banner and a cash vault in the yard. Its outermost
- * courses sit at ±4.3, the widest of the five tiers; `CAMP_FOOTPRINT` in `map.ts` mirrors that
- * rect so the shoppers' road lanes can be routed around the building.
+ * Tier 4 — Grand Fort: log-cabin courses, banner and a cash vault in the yard. The widest of the
+ * five tiers, and the one `CAMP_FOOTPRINT` in `map.ts` is drawn around.
+ *
+ * Every outward dimension is derived from `CAMP_HALF` so the fort's outer SURFACE lands on the
+ * rect rather than its centre lines. The distinction is the whole point: the walls used to be
+ * centred on ±4.3, which put the log faces at ±4.56, the floor slab at ±4.5 and the corner posts
+ * at ±4.74 — all of it outside the rect that the shoppers' lanes are routed around, so roughly a
+ * fifth of departing buyers clipped a corner post on their way home.
  */
 function campGrandFort(g: THREE.Group): void {
-  g.add(at(box(9, 0.4, 9, CAMP_LOG), 0, 0.2, 0));
+  const R = 0.26;                      // log radius
+  const wall = CAMP_HALF - R;          // centre line of a wall log: outer face lands on CAMP_HALF
+  const span = CAMP_HALF * 2;          // a full-width course, end to end
+  const postR = 0.34;
+  g.add(at(box(span, 0.4, span, CAMP_LOG), 0, 0.2, 0));
   for (let course = 0; course < 7; course++) {
     const y = 0.6 + course * 0.52;
     const tint = course % 2 === 0 ? CAMP_LOG : CAMP_WOOD;
-    const len = course % 2 === 0 ? 9 : 8.6;
-    for (const [x, z, axis] of [[0, -4.3, 'x'], [-4.3, 0, 'z']] as const) {
-      const log = at(cyl(0.26, len, tint), x, y, z);
+    // Alternating course lengths are what give the log-cabin overlap; both stay within the rect.
+    const len = course % 2 === 0 ? span : span - 0.4;
+    for (const [x, z, axis] of [[0, -wall, 'x'], [-wall, 0, 'z']] as const) {
+      const log = at(cyl(R, len, tint), x, y, z);
       if (axis === 'x') log.rotation.z = Math.PI / 2; else log.rotation.x = Math.PI / 2;
       g.add(log);
     }
-    // East face is broken by both rail gates (see `campFort`), so it runs as three stubs.
-    for (const [zc, zlen] of [[-3.9, 1.2], [0, 2.0], [3.9, 1.2]] as const) {
-      const log = at(cyl(0.26, zlen * (len / 9), tint), 4.3, y, zc);
+    // East face is broken by both rail gates (see `campFort`), so it runs as three stubs. The
+    // outer two are placed by their far end so they finish flush with the corner.
+    const shrink = len / span;
+    for (const [side, zlen] of [[-1, 1.2], [0, 2.0], [1, 1.2]] as const) {
+      const l = zlen * shrink;
+      const log = at(cyl(R, l, tint), wall, y, side * (CAMP_HALF - l / 2));
       log.rotation.x = Math.PI / 2;
       g.add(log);
     }
-    for (const sx of [-3.2, 3.2]) {
-      const log = at(cyl(0.26, 2.6, tint), sx, y, 4.3);
+    // South face keeps the doorway: fixed length and centre so the gap the player walks in
+    // through stays exactly |x| < 1.9 on every course.
+    for (const sx of [-1, 1]) {
+      const log = at(cyl(R, 2.4, tint), sx * (CAMP_HALF - 1.2), y, wall);
       log.rotation.z = Math.PI / 2;
       g.add(log);
     }
   }
-  g.add(at(box(9.3, 0.2, 0.7, COLORS.snowCap), 0, 4.3, -4.3));
-  for (const [px, pz] of [[-4.4, -4.4], [4.4, -4.4], [-4.4, 4.4], [4.4, 4.4]] as const)
-    g.add(at(cyl(0.34, 4.6, COLORS.trunk), px, 2.3, pz));
-  g.add(at(cyl(0.12, 5.4, 0xd8d2c4), 0, 3.1, -4.3));
-  g.add(at(box(2.2, 1.3, 0.12, COLORS.playerCoat), 1.1, 5.1, -4.3));
-  g.add(at(box(2.2, 0.3, 0.16, 0xf4f8fb), 1.1, 4.7, -4.3));
+  g.add(at(box(span, 0.2, 0.7, COLORS.snowCap), 0, 4.3, -wall));
+  for (const px of [-1, 1])
+    for (const pz of [-1, 1])
+      g.add(at(cyl(postR, 4.6, COLORS.trunk), px * (CAMP_HALF - postR), 2.3, pz * (CAMP_HALF - postR)));
+  g.add(at(cyl(0.12, 5.4, 0xd8d2c4), 0, 3.1, -wall));
+  g.add(at(box(2.2, 1.3, 0.12, COLORS.playerCoat), 1.1, 5.1, -wall));
+  g.add(at(box(2.2, 0.3, 0.16, 0xf4f8fb), 1.1, 4.7, -wall));
   // Cash vault: dark strongbox with gold trim, plus loose bars on the counter.
   g.add(at(box(2.4, 1.7, 1.5, 0x3a4046), 2.6, 1.25, 2.2));
   g.add(at(box(2.5, 0.22, 1.6, COLORS.gold), 2.6, 2.2, 2.2));

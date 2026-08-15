@@ -1,3 +1,4 @@
+import { EXPANSIONS_MAX } from '../content/balance';
 import { createInitialState } from './init';
 import { applyExpansion, expeditionCost } from './systems/expansion';
 import { FELLED } from './systems/harvest';
@@ -89,7 +90,7 @@ export function deserialize(json: string, previous?: GameState): GameState {
   // `state.trees` before the felled list below can find them, and the expedition pad's price has
   // to be re-derived before its part-payment is restored. Saves written before Amendment 5B have
   // no count at all and load as the ring-0 world they were saved from.
-  state.expansions = Math.max(0, Math.floor(data.expansions ?? 0));
+  state.expansions = Math.min(EXPANSIONS_MAX, Math.max(0, Math.floor(data.expansions ?? 0)));
   for (let ring = 1; ring <= state.expansions; ring++) applyExpansion(state, ring);
   for (const pad of state.pads) {
     // The repeatable pad's price is a function of the ring count, not a stored number: it is

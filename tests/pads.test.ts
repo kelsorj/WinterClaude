@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { padAvailable, padsTick } from '../src/game/systems/pads';
-import { EXPEDITION_BASE } from '../src/content/balance';
+import { EXPEDITION_BASE, PAY_RATE, TARGET_PAY_SECONDS } from '../src/content/balance';
 import { worldBounds } from '../src/content/map';
 import { v } from '../src/game/math';
 import { aPad, blankState } from './helpers';
@@ -129,6 +129,35 @@ describe('padsTick', () => {
     state.player.carry.wood = 12;
     padsTick(state, 1 / 60);
     expect(state.pads[0].paid).toBeLessThanOrEqual(1);
+  });
+
+  /**
+   * The expedition's price grows exponentially. Against a flat 12/s that would have turned into
+   * exponential standing still — the sixteenth ring is ~230,000 cash, i.e. over five hours on
+   * the pad. The stream scales with the price instead, so what gates an expensive pad is having
+   * the money, not holding a key down.
+   */
+  it('fills an expensive pad in bounded time rather than at a flat rate', () => {
+    const state = blankState();
+    state.pads.push(aPad({ cost: 100_000, effect: { type: 'expedition' } }));
+    state.player.cash = 100_000;
+    ticks(state, TARGET_PAY_SECONDS + 1);
+    expect(state.pads[0].done).toBe(true);
+    expect(state.player.cash).toBeCloseTo(0);
+  });
+
+  it('leaves the campaign\'s own pads on the flat rate', () => {
+    // Every campaign pad is priced under PAY_RATE × TARGET_PAY_SECONDS, so none of them changes
+    // pace: the scaling only ever kicks in above 300.
+    for (const cost of [10, 30, 100, 300]) {
+      const state = blankState();
+      state.pads.push(aPad({ cost }));
+      state.player.cash = cost;
+      ticks(state, cost / PAY_RATE - 0.05);
+      expect(state.pads[0].done).toBe(false); // not one tick faster than the flat rate
+      ticks(state, 0.2);
+      expect(state.pads[0].done).toBe(true);
+    }
   });
 
   it('leaves cash dust-free after completing a cash pad', () => {

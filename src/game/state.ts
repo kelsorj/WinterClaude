@@ -43,7 +43,7 @@ export interface SellStation {
 /**
  * A shopper walking in off the road to buy from one bench: queue up, take up to
  * `CUSTOMER_TAKE` goods off its stock, leave the cash on the mat, walk back off the map.
- * Customers are transient — they are never saved and never affect the win condition.
+ * Customers are transient — they are never saved.
  */
 export type CustomerState = 'arriving' | 'queued' | 'buying' | 'leaving';
 export interface Customer {

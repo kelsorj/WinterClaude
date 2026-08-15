@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { EXPANSIONS_MAX } from '../src/content/balance';
 import { createInitialState } from '../src/game/init';
 import { deserialize, serialize } from '../src/game/save';
 import { applyExpansion, expeditionCost } from '../src/game/systems/expansion';
@@ -242,6 +243,27 @@ describe('save round-trip', () => {
     expect(restored.expansions).toBe(0);
     expect(restored.trees.length).toBe(state.trees.length);
     expect(restored.pads.find((p) => p.effect.type === 'expedition')?.cost).toBe(200);
+  });
+
+  it('clamps a corrupt expansion count instead of hanging the load', () => {
+    // Loading replays applyExpansion once per ring, so an absurd count would sit there
+    // generating millions of trees. Nothing reachable by play comes near the ceiling.
+    const state = createInitialState();
+    const broken = JSON.parse(serialize(state)) as Record<string, unknown>;
+    broken.expansions = 1e6;
+
+    const restored = deserialize(JSON.stringify(broken));
+
+    expect(restored.expansions).toBe(EXPANSIONS_MAX);
+  });
+
+  it('shrugs off a negative or fractional expansion count', () => {
+    const state = createInitialState();
+    const broken = JSON.parse(serialize(state)) as Record<string, unknown>;
+    broken.expansions = -7;
+    expect(deserialize(JSON.stringify(broken)).expansions).toBe(0);
+    broken.expansions = 2.8;
+    expect(deserialize(JSON.stringify(broken)).expansions).toBe(2);
   });
 
   it('loads pre-forest saves with a full forest', () => {

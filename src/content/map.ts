@@ -77,9 +77,16 @@ export const DEPOT_POS: Vec2 = v(18, 0);
 
 /**
  * The ground the camp building stands on, centred on the depot. This is the Grand Fort's plan —
- * ±4.3 in both axes, mirroring `campGrandFort`'s outermost log courses in `meshes.ts` — which is
- * the largest of the five tiers, so anything that clears this rect clears the camp at every tier.
- * Nothing may be routed through it: the fort is a solid building, not scenery.
+ * ±4.3 in both axes — and the Grand Fort is the largest of the five tiers, so anything that
+ * clears this rect clears the camp at every tier. Nothing may be routed through it: the fort is
+ * a solid building, not scenery.
+ *
+ * The rect is the authority and the geometry is built to fit it, not the other way round:
+ * `campGrandFort` and the tier-3 gate towers derive their outward dimensions from `CAMP_HALF`
+ * so their outer SURFACES land on ±4.3 rather than their centre lines. `camp.test.ts` measures
+ * every tier's real meshes against this rect, because the claim above was quietly false for a
+ * while — walls centred on ±4.3 put log faces at ±4.56 and corner posts at ±4.74, and the
+ * shoppers' departure lane comes within a quarter-unit of the rect's north face.
  */
 export const CAMP_FOOTPRINT: Rect = {
   x0: DEPOT_POS.x - 4.3, z0: -4.3, x1: DEPOT_POS.x + 4.3, z1: 4.3,

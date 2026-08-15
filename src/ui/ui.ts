@@ -37,10 +37,11 @@ function iconCanvas(kind: Currency): HTMLCanvasElement {
   return canvas;
 }
 
-export function initUI(cb: UICallbacks, initialMuted: boolean): UIHandles {
+export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = false): UIHandles {
   const hud = document.createElement('div');
   hud.id = 'hud';
-  const rows = new Map<Currency, { el: HTMLElement; value: HTMLElement; prev: number }>();
+  type Row = { el: HTMLElement; value: HTMLElement; prev: number; timer?: ReturnType<typeof setTimeout> };
+  const rows = new Map<Currency, Row>();
   for (const key of RES_KEYS) {
     const row = document.createElement('div');
     row.className = 'res';
@@ -80,7 +81,8 @@ export function initUI(cb: UICallbacks, initialMuted: boolean): UIHandles {
   winPanel.appendChild(button('Keep playing', () => win.classList.add('hidden')));
   win.appendChild(winPanel);
   document.body.appendChild(win);
-  let winShown = false;
+  // A save that was already won must not re-announce the win on every reload.
+  let winShown = initialWon;
 
   function setMuted(muted: boolean): void {
     muteBtn.textContent = muted ? 'Unmute (M)' : 'Mute (M)';
@@ -91,10 +93,13 @@ export function initUI(cb: UICallbacks, initialMuted: boolean): UIHandles {
       const row = rows.get(key)!;
       const val = key === 'cash' ? Math.floor(state.player.cash) : state.player.carry[key];
       if (val !== row.prev) {
+        // One timer per row: a streaming pad payment ticks faster than 250 ms, and stacked
+        // timers from earlier ticks would strip the class mid-flash and strobe the row.
+        clearTimeout(row.timer);
         row.el.classList.remove('flash-up', 'flash-down');
         void row.el.offsetWidth; // restart the CSS transition
         row.el.classList.add(val > row.prev ? 'flash-up' : 'flash-down');
-        setTimeout(() => row.el.classList.remove('flash-up', 'flash-down'), 250);
+        row.timer = setTimeout(() => row.el.classList.remove('flash-up', 'flash-down'), 250);
         row.value.textContent = String(val);
         row.prev = val;
       }

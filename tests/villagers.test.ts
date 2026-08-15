@@ -31,7 +31,7 @@ describe('villagersTick', () => {
 
   it('walking villagers reach camp and become haulers', () => {
     const state = blankState();
-    state.villagers.push(aVillager({ state: 'walking', pos: v(11, 0) })); // CAMP_POS is (14,0)
+    state.villagers.push(aVillager({ state: 'walking', pos: v(15, 4.4) })); // CAMP_POS is (18,4.4)
     ticks(state, 2);
     expect(state.villagers[0].state).toBe('hauler');
   });

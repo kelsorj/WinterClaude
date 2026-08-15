@@ -24,17 +24,21 @@ const ui = initUI({
     ui.showPause(false);
   },
   onToggleMute: () => toggleMute(),
-}, isMuted());
+}, isMuted(), state.won);
 
 window.addEventListener('keydown', (e) => {
+  if (e.repeat) return; // holding M must not strobe the mute flag
   if (e.key === 'Escape') {
     paused = !paused;
     ui.showPause(paused);
   }
   if (e.key.toLowerCase() === 'm') ui.setMuted(toggleMute());
 });
-window.addEventListener('pointerdown', initAudio, { once: true });
-window.addEventListener('keydown', initAudio, { once: true });
+// Not `once`: the first keypress may be an Escape, which grants no audio activation, and a
+// backgrounded tab suspends the context. initAudio is a cheap no-op once the clock is running.
+window.addEventListener('pointerdown', initAudio);
+window.addEventListener('keydown', initAudio);
+document.addEventListener('visibilitychange', initAudio);
 window.addEventListener('beforeunload', () => saveGame(state));
 
 const FIXED = 1 / 60;

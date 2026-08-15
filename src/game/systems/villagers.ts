@@ -19,6 +19,8 @@ export function villagersTick(state: GameState, dt: number): void {
       vil.pos = toward(vil.pos, CAMP_POS, VILLAGER_SPEED * dt);
       if (dist(vil.pos, CAMP_POS) < 0.5) vil.state = 'hauler';
     } else {
+      // The fort crew stands at its post until hired; rescued villagers always haul.
+      if (vil.kind === 'crew' && !state.distributorActive) continue;
       haulerTick(state, vil, dt);
     }
   }

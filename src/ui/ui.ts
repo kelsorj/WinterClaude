@@ -108,7 +108,9 @@ export function initUI(cb: UICallbacks, initialMuted: boolean, initialWon = fals
         row.prev = val;
       }
     }
-    const text = `${state.rescued}/${state.villagers.length}`;
+    // Only the snowfield's frozen villagers can be rescued; the fort crew is hired, not thawed.
+    const rescuable = state.villagers.filter((vil) => vil.kind === 'rescued').length;
+    const text = `${state.rescued}/${rescuable}`;
     if (text !== rescuedText) {
       rescuedText = text;
       rescuedValue.textContent = text;

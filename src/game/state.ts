@@ -65,7 +65,8 @@ export type UnlockEffect =
   | { type: 'machine'; machineId: string }
   | { type: 'speed'; mult: number }
   | { type: 'carry'; add: number }
-  | { type: 'camp'; tier: number };
+  | { type: 'camp'; tier: number }
+  | { type: 'distributor' };
 
 export interface Pad {
   id: string; pos: Vec2; currency: Currency; cost: number;
@@ -80,8 +81,14 @@ export interface Rail { id: string; points: Vec2[]; sourceType: 'turret' | 'sawm
 export interface Cart { id: string; railId: string; s: number; dir: 1 | -1; load: number; cap: number }
 
 export type VillagerState = 'frozen' | 'walking' | 'hauler';
+/**
+ * 'rescued' villagers start frozen in the snowfield and are thawed for meat; 'crew' are the
+ * fort's own hand-off team (Amendment 2B) — present from the start, never frozen, never counted
+ * toward the rescued total or the win, and idle until the distributor pad is bought.
+ */
+export type VillagerKind = 'rescued' | 'crew';
 export interface Villager {
-  id: string; pos: Vec2; state: VillagerState;
+  id: string; kind: VillagerKind; pos: Vec2; state: VillagerState;
   carrying: ResourceKind | null; amount: number;
 }
 
@@ -116,6 +123,8 @@ export interface GameState {
   villagers: Villager[];
   /** Highest camp building tier bought (0 = bare clearing, 4 = grand fort). */
   campTier: number;
+  /** Whether the fort's hand-off crew has been hired; derived from the distributor pad on load. */
+  distributorActive: boolean;
   zonesOpen: Record<ZoneId, boolean>;
   rescued: number;
   won: boolean;

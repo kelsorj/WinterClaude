@@ -93,6 +93,15 @@ describe('padsTick', () => {
     expect(state.player.hasPickaxe).toBe(true);
   });
 
+  it('applies the distributor, putting the fort crew to work', () => {
+    const state = blankState();
+    state.pads.push(aPad({ effect: { type: 'distributor' } }));
+    state.player.cash = 20;
+    expect(state.distributorActive).toBe(false);
+    ticks(state, 1);
+    expect(state.distributorActive).toBe(true);
+  });
+
   it('never overpays past the cost', () => {
     const state = blankState();
     state.pads.push(aPad());

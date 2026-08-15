@@ -38,7 +38,8 @@ describe('save round-trip', () => {
     expect(restored.turrets.find((t) => t.id === 'turret1')?.active).toBe(true); // derived from pad
     expect(restored.rescued).toBe(2);
     // mid-walk villagers restore as haulers at the depot — acceptable per spec
-    expect(restored.villagers.filter((v) => v.state !== 'frozen')).toHaveLength(2);
+    expect(restored.villagers.filter((v) => v.kind === 'rescued' && v.state !== 'frozen'))
+      .toHaveLength(2);
     expect(restored.depot.meat).toBe(9);
     expect(restored.turrets[0].output).toBe(5);
     expect(restored.stats.earned).toBe(200);
@@ -81,6 +82,24 @@ describe('save round-trip', () => {
     const legacy = JSON.parse(serialize(state)) as Record<string, unknown>;
     delete legacy.stock;
     expect(deserialize(JSON.stringify(legacy)).stations[0].stock).toBe(0);
+  });
+
+  it('derives the fort crew from the distributor pad and keeps them out of the rescue count', () => {
+    const fresh = deserialize(serialize(createInitialState()));
+    expect(fresh.distributorActive).toBe(false);
+    expect(fresh.rescued).toBe(0);
+    expect(fresh.villagers.filter((v) => v.kind === 'crew')).toHaveLength(3);
+
+    const state = createInitialState();
+    const pad = state.pads.find((p) => p.effect.type === 'distributor')!;
+    pad.done = true; pad.paid = pad.cost;
+    state.villagers[0].state = 'hauler';
+    state.rescued = 1;
+    const restored = deserialize(serialize(state));
+    expect(restored.distributorActive).toBe(true);
+    expect(restored.rescued).toBe(1); // the three crew are not rescues
+    expect(restored.villagers.filter((v) => v.kind === 'crew').every((v) => v.state === 'hauler'))
+      .toBe(true);
   });
 
   it('does not save customers — they are transient', () => {

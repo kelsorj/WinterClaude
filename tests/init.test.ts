@@ -10,10 +10,11 @@ describe('createInitialState', () => {
 
   it('spawns the expected entity populations', () => {
     expect(state.trees.length).toBeGreaterThanOrEqual(250); // finite forest: no respawns
-    expect(state.pads.length).toBe(17);
+    expect(state.pads.length).toBe(18);
     expect(state.bears.length).toBeGreaterThanOrEqual(15);
     expect(state.seams.length).toBe(6);
-    expect(state.villagers.length).toBe(40);
+    expect(state.villagers.filter((v) => v.kind === 'rescued').length).toBe(40);
+    expect(state.villagers.filter((v) => v.kind === 'crew').length).toBe(3);
     expect(state.stations.map((s) => s.resource).sort()).toEqual(['gold', 'meat', 'wood']);
     expect(state.turrets.length).toBe(2);
     expect(state.sawmills.length).toBe(1);
@@ -50,6 +51,20 @@ describe('createInitialState', () => {
       .map((p) => (p.effect.type === 'machine' ? p.effect.machineId : null))
       .filter((x): x is string => x !== null);
     expect(padMachineIds.sort()).toEqual(['sawmill1', 'turret1', 'turret2']);
+  });
+
+  it('starts the fort crew idle inside the camp, never frozen', () => {
+    const crew = state.villagers.filter((v) => v.kind === 'crew');
+    expect(state.distributorActive).toBe(false);
+    for (const c of crew) {
+      expect(c.state).toBe('hauler');
+      expect(dist(c.pos, state.depotPos)).toBeLessThan(4);
+    }
+    // Exactly one pad hires them, and it hangs off the Fort.
+    const pads = state.pads.filter((p) => p.effect.type === 'distributor');
+    expect(pads).toHaveLength(1);
+    expect(pads[0].requires).toBe('p-camp3');
+    expect(pads[0].currency).toBe('cash');
   });
 
   it('camp pads cover tiers 1-4 exactly once each', () => {

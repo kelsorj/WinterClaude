@@ -66,6 +66,14 @@ export function seamDefs(): { pos: Vec2; zone: ZoneId }[] {
   return defs;
 }
 
+/**
+ * The fort's hand-off crew (Amendment 2B). Three posts inside the camp yard, south of the depot
+ * stockpiles at every tier, where they stand idle until the distributor pad is bought.
+ */
+export function crewDefs(): Vec2[] {
+  return [v(16.4, 1.7), v(18.0, 2.3), v(19.6, 1.7)];
+}
+
 export function villagerDefs(): Vec2[] {
   const defs: Vec2[] = [];
   for (let i = 0; i < 8; i++)
@@ -134,7 +142,8 @@ export function padDefs(): Pad[] {
   ): Pad => ({ id, pos, currency, cost, paid: 0, done: false, effect, requires, payTimer: 0 });
   // The camp pads ring the depot yard; everything else hangs off the chain that grows the camp:
   // camp1 → axe → {carry1, speed1, gate-deep} → camp2 → {turret1, sawmill1} → scythe → camp3 →
-  // gate-hunt → turret2, and sawmill1 → gate-quarry → pickaxe → {carry2, speed2, camp4}.
+  // {gate-hunt, distributor} → turret2, and sawmill1 → gate-quarry → pickaxe →
+  // {carry2, speed2, camp4}.
   return [
     p('p-camp1',      v(11, -4),   'wood', 12, { type: 'camp', tier: 1 }),
     p('p-axe',        v(-4, -4),   'cash', 10, { type: 'tool', tool: 'axe' }, 'p-camp1'),
@@ -148,6 +157,9 @@ export function padDefs(): Pad[] {
     p('p-camp3',      v(15, -6),   'wood', 90, { type: 'camp', tier: 3 }, 'p-scythe'),
     p('p-gate-hunt',  v(24, 5),    'meat', 20, { type: 'gate', zone: 'hunting' }, 'p-camp3'),
     p('p-turret2',    v(31, 8),    'cash', 50, { type: 'machine', machineId: 'turret2' }, 'p-gate-hunt'),
+    // Sits off the fort's south-east corner, clear of the camp footprint, the rail gates and the
+    // road fence, so the player walks past it on the way in from the benches.
+    p('p-distributor', v(20, 9.5), 'cash', 100, { type: 'distributor' }, 'p-camp3'),
     p('p-gate-quarry', v(-24, -5), 'cash', 60, { type: 'gate', zone: 'quarry' }, 'p-sawmill1'),
     p('p-pickaxe',    v(-31, -8),  'cash', 30, { type: 'pickaxe' }, 'p-gate-quarry'),
     p('p-carry2',     v(-10, 4),   'gold', 8,  { type: 'carry', add: 24 }, 'p-pickaxe'),

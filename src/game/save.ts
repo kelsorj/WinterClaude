@@ -31,7 +31,10 @@ export function serialize(state: GameState): string {
     padsDone: state.pads.filter((p) => p.done).map((p) => p.id),
     padsPaid: Object.fromEntries(state.pads.filter((p) => !p.done && p.paid > 0).map((p) => [p.id, p.paid])),
     zonesOpen: state.zonesOpen,
-    thawed: state.villagers.filter((v) => v.state !== 'frozen').map((v) => v.id),
+    // Crew are never frozen and never rescued, so they must stay out of this list or reloading
+    // would credit the player with three rescues they never made.
+    thawed: state.villagers
+      .filter((v) => v.kind === 'rescued' && v.state !== 'frozen').map((v) => v.id),
     felledTrees: state.trees.filter((t) => t.respawn > 0).map((t) => t.id),
     depot: state.depot,
     machineOutputs: Object.fromEntries([
@@ -73,11 +76,12 @@ export function deserialize(json: string): GameState {
     st.matCash = data.matCash?.[st.id] ?? 0;
     st.stock = data.stock?.[st.id] ?? 0;
   }
-  // Machine activation and the camp tier are derived from completed pads rather than stored.
+  // Machine activation, the camp tier and the crew are derived from completed pads, not stored.
   for (const pad of state.pads) {
     if (!pad.done) continue;
     if (pad.effect.type === 'machine') activateMachine(state, pad.effect.machineId);
     if (pad.effect.type === 'camp') state.campTier = Math.max(state.campTier, pad.effect.tier);
+    if (pad.effect.type === 'distributor') state.distributorActive = true;
   }
   // Saves written before the finite forest landed have no felled list; they load with a full
   // forest rather than failing, which only costs the player some already-cut trees.
@@ -86,7 +90,7 @@ export function deserialize(json: string): GameState {
     if (felled.has(tree.id)) { tree.respawn = FELLED; tree.hp = 0; }
   }
   for (const vil of state.villagers) {
-    if (data.thawed.includes(vil.id)) {
+    if (vil.kind === 'rescued' && data.thawed.includes(vil.id)) {
       vil.state = 'hauler';
       vil.pos = { x: state.depotPos.x, z: state.depotPos.z };
     }

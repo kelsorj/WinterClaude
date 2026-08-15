@@ -54,7 +54,7 @@ export const aCart = (over: Partial<Cart> = {}): Cart =>
 
 export const aVillager = (over: Partial<Villager> = {}): Villager =>
   ({ id: 'v1', kind: 'rescued', pos: v(0, 1), state: 'frozen', carrying: null, amount: 0,
-     target: null, ...over });
+     target: null, rotation: 0, ...over });
 
 export const aCrew = (over: Partial<Villager> = {}): Villager =>
   aVillager({ id: 'crew0', kind: 'crew', state: 'hauler', ...over });

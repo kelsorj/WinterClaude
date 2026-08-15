@@ -71,6 +71,13 @@ export const VILLAGER_RANGE = 1.8;
 export const HAUL_AMOUNT = 3;
 
 /**
+ * The rotation a carrier walks around the depot, one pile per trip (Amendment 4B). Order is
+ * arbitrary — what matters is that it is fixed, so a carrier resuming at the pile after the one
+ * it last took visits every pile in turn rather than mobbing the biggest.
+ */
+export const HAUL_ORDER: ResourceKind[] = ['wood', 'meat', 'gold'];
+
+/**
  * Grand Fort miners (Amendment 3A). They work a seam far slower than the player does with a
  * pickaxe (an axe swing lands 2 damage every 0.45 s, i.e. ~4.4/s) — at 1 hp/s a seam takes
  * `SEAM_HP` = 4 seconds, the "a few seconds" the amendment asks for, and two miners against a

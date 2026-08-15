@@ -97,6 +97,56 @@ describe('villagersTick', () => {
     expect(state.villagers[0].state).toBe('hauler');
   });
 
+  it('rotates a carrier over every non-empty pile instead of always taking the biggest', () => {
+    const state = blankState();
+    state.depotPos = v(3, 0);
+    // Meat and wood dominate; under the old largest-pile rule the 3 gold never moved.
+    state.depot = { wood: 100, meat: 100, gold: 3 };
+    state.stations.push(
+      aStation({ id: 's-wood', resource: 'wood' }),
+      aStation({ id: 's-meat', resource: 'meat', pos: v(0, -1), matPos: v(2, -1) }),
+      aStation({ id: 's-gold', resource: 'gold', pos: v(1, 2), matPos: v(3, 2) }),
+    );
+    state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) }));
+    const vil = state.villagers[0];
+
+    const trips: string[] = [];
+    let last: string | null = null;
+    for (let t = 0; t < 20; t += 1 / 60) {
+      villagersTick(state, 1 / 60);
+      if (vil.carrying !== null && vil.carrying !== last) trips.push(vil.carrying);
+      last = vil.carrying;
+    }
+
+    expect(trips.length).toBeGreaterThanOrEqual(3);
+    expect(new Set(trips.slice(0, 3)).size).toBe(3); // three different piles in three trips
+  });
+
+  it('gets gold onto the gold bench even when meat and wood dominate the depot', () => {
+    const state = blankState();
+    state.depotPos = v(3, 0);
+    state.depot = { wood: 100, meat: 100, gold: 3 };
+    state.stations.push(
+      aStation({ id: 's-wood', resource: 'wood' }),
+      aStation({ id: 's-meat', resource: 'meat', pos: v(0, -1), matPos: v(2, -1) }),
+      aStation({ id: 's-gold', resource: 'gold', pos: v(1, 2), matPos: v(3, 2) }),
+    );
+    state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) }));
+    ticks(state, 30);
+    expect(state.stations.find((s) => s.resource === 'gold')!.stock).toBe(3);
+    expect(state.depot.gold).toBe(0);
+  });
+
+  it('skips empty piles rather than stalling a trip on them', () => {
+    const state = blankState();
+    state.depotPos = v(3, 0);
+    state.depot = { wood: 0, meat: 0, gold: 6 };
+    state.stations.push(aStation({ id: 's-gold', resource: 'gold' }));
+    state.villagers.push(aVillager({ state: 'hauler', pos: v(3, 0) }));
+    ticks(state, 12);
+    expect(state.stations[0].stock).toBe(6);
+  });
+
   it('haulers idle at an empty depot', () => {
     const state = blankState();
     state.depotPos = v(3, 0);

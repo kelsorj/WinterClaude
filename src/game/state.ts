@@ -94,6 +94,12 @@ export interface Villager {
   carrying: ResourceKind | null; amount: number;
   /** Miners only: the seam this one has claimed, so no two ever work the same rock. */
   target: string | null;
+  /**
+   * Haulers only: index into the depot's resource rotation of the pile this carrier last loaded.
+   * The next trip resumes scanning at the pile AFTER it, which is what spreads a crew's trips
+   * across every pile instead of all of them mobbing the biggest one (Amendment 4B).
+   */
+  rotation: number;
 }
 
 export type GameEvent =

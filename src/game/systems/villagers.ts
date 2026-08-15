@@ -1,5 +1,5 @@
 import {
-  HAUL_AMOUNT, MINER_CAMP_TIER, MINER_DRAIN, MINER_RANGE, SEAM_RESPAWN, SEAM_YIELD,
+  HAUL_AMOUNT, HAUL_ORDER, MINER_CAMP_TIER, MINER_DRAIN, MINER_RANGE, SEAM_RESPAWN, SEAM_YIELD,
   VILLAGER_RANGE, VILLAGER_SPEED, thawCost,
 } from '../../content/balance';
 import { CAMP_POS } from '../../content/map';
@@ -102,20 +102,31 @@ function minerTick(state: GameState, vil: Villager, dt: number): void {
   }
 }
 
+/**
+ * Load one carrier at the depot, fairly (Amendment 4B). Carriers used to take whichever pile was
+ * biggest, which meant a depot with 200 meat in it and 3 gold saw every trip haul meat and the
+ * gold bench never open — the fort's own miners could not get their gold to market. Each carrier
+ * instead remembers the pile it last took and resumes scanning at the next one, skipping empty
+ * piles, so a lone carrier alternates and a crew of five spreads out.
+ */
+function loadAtDepot(state: GameState, vil: Villager): void {
+  for (let step = 1; step <= HAUL_ORDER.length; step++) {
+    const idx = (vil.rotation + step) % HAUL_ORDER.length;
+    const kind = HAUL_ORDER[idx];
+    if (state.depot[kind] <= 0) continue;
+    const n = Math.min(HAUL_AMOUNT, state.depot[kind]);
+    state.depot[kind] -= n;
+    vil.carrying = kind;
+    vil.amount = n;
+    vil.rotation = idx;
+    return;
+  }
+}
+
 function haulerTick(state: GameState, vil: Villager, dt: number): void {
   if (vil.carrying === null) {
     vil.pos = toward(vil.pos, state.depotPos, VILLAGER_SPEED * dt);
-    if (dist(vil.pos, state.depotPos) < 1) {
-      const kinds: ResourceKind[] = ['wood', 'meat', 'gold'];
-      kinds.sort((a, b) => state.depot[b] - state.depot[a]);
-      const best = kinds[0];
-      if (state.depot[best] > 0) {
-        const n = Math.min(HAUL_AMOUNT, state.depot[best]);
-        state.depot[best] -= n;
-        vil.carrying = best;
-        vil.amount = n;
-      }
-    }
+    if (dist(vil.pos, state.depotPos) < 1) loadAtDepot(state, vil);
   } else {
     const st = state.stations.find((s) => s.resource === vil.carrying);
     if (!st) { vil.carrying = null; vil.amount = 0; return; }

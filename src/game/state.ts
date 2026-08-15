@@ -82,14 +82,18 @@ export interface Cart { id: string; railId: string; s: number; dir: 1 | -1; load
 
 export type VillagerState = 'frozen' | 'walking' | 'hauler';
 /**
- * 'rescued' villagers start frozen in the snowfield and are thawed for meat; 'crew' are the
- * fort's own hand-off team (Amendment 2B) — present from the start, never frozen, never counted
- * toward the rescued total or the win, and idle until the distributor pad is bought.
+ * 'rescued' villagers start frozen in the snowfield and are thawed for meat. The other two are
+ * the fort's own staff — present from the start, never frozen, never counted toward the rescued
+ * total or the win, and idle at their posts until the camp earns them: 'crew' are the hand-off
+ * team the distributor pad hires (Amendment 2B), 'miner' the gold crew the Grand Fort brings
+ * with it (Amendment 3A).
  */
-export type VillagerKind = 'rescued' | 'crew';
+export type VillagerKind = 'rescued' | 'crew' | 'miner';
 export interface Villager {
   id: string; kind: VillagerKind; pos: Vec2; state: VillagerState;
   carrying: ResourceKind | null; amount: number;
+  /** Miners only: the seam this one has claimed, so no two ever work the same rock. */
+  target: string | null;
 }
 
 export type GameEvent =

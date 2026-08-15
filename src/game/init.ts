@@ -1,7 +1,7 @@
 import { BEAR_HP, CARRY_BASE, CART_CAP, PLAYER_BASE_SPEED, SEAM_HP, TREE_HP } from '../content/balance';
 import {
-  DEPOT_POS, PLAYER_SPAWN, bearDefs, crewDefs, padDefs, railDefs, sawmillDefs, seamDefs,
-  stationDefs, treeDefs, turretDefs, villagerDefs,
+  DEPOT_POS, PLAYER_SPAWN, bearDefs, crewDefs, minerDefs, padDefs, railDefs, sawmillDefs,
+  seamDefs, stationDefs, treeDefs, turretDefs, villagerDefs,
 } from '../content/map';
 import { v } from './math';
 import type { GameState } from './state';
@@ -37,13 +37,19 @@ export function createInitialState(): GameState {
     villagers: [
       ...villagerDefs().map((p, i) => ({
         id: `vil${i}`, kind: 'rescued' as const, pos: v(p.x, p.z),
-        state: 'frozen' as const, carrying: null, amount: 0,
+        state: 'frozen' as const, carrying: null, amount: 0, target: null,
       })),
       // The crew is on site from the first frame — they simply have no job until the fort's
       // distributor pad is bought, which is what makes buying it read as hiring them.
       ...crewDefs().map((p, i) => ({
         id: `crew${i}`, kind: 'crew' as const, pos: v(p.x, p.z),
-        state: 'hauler' as const, carrying: null, amount: 0,
+        state: 'hauler' as const, carrying: null, amount: 0, target: null,
+      })),
+      // Likewise the miners: on site, pickaxes in hand, with nothing to mine for until the
+      // Grand Fort goes up. Their activation is read off `campTier`, so it needs no save field.
+      ...minerDefs().map((p, i) => ({
+        id: `miner${i}`, kind: 'miner' as const, pos: v(p.x, p.z),
+        state: 'hauler' as const, carrying: null, amount: 0, target: null,
       })),
     ],
     campTier: 0,

@@ -29,6 +29,7 @@ export const COLORS = {
   playerCoat: 0x2f6fbb, playerCoatDark: 0x24548f,
   villagerCoat: 0x2fb3c9, villagerCoatDark: 0x208d9e,
   crewCoat: 0xf07818, crewCoatDark: 0xbc560c,
+  minerCoat: 0x59646f, minerCoatDark: 0x3c454e,
   ice: 0x9adcf0, frost: 0xdff7ff,
   bench: 0xef9640, benchDark: 0xc4762c, mat: 0x33383d,
   wood: 0xb07a3f, meat: 0xdc5a52, gold: 0xf6c945, cash: 0x4fbf62,
@@ -621,17 +622,23 @@ export interface VillagerRefs extends PersonRefs {
 }
 
 /**
- * Rescued villagers wear the camp's teal; the fort's hand-off crew wears hi-vis orange so the
- * three of them read as staff at a glance, in the fort and out on the bench run.
+ * Rescued villagers wear the camp's teal; the fort's hand-off crew wears hi-vis orange and the
+ * Grand Fort's miners slate grey, so each of the three reads as its own job at a glance — and
+ * none of them can be mistaken for the player's blue.
  */
+const VILLAGER_COATS: Record<VillagerKind, { coat: number; dark: number }> = {
+  rescued: { coat: COLORS.villagerCoat, dark: COLORS.villagerCoatDark },
+  crew: { coat: COLORS.crewCoat, dark: COLORS.crewCoatDark },
+  miner: { coat: COLORS.minerCoat, dark: COLORS.minerCoatDark },
+};
+
 export function makeVillager(kind: VillagerKind = 'rescued'): THREE.Group {
-  const crew = kind === 'crew';
-  const g = makePerson(
-    crew ? COLORS.crewCoat : COLORS.villagerCoat,
-    crew ? COLORS.crewCoatDark : COLORS.villagerCoatDark,
-    false,
-  );
+  const palette = VILLAGER_COATS[kind];
+  const g = makePerson(palette.coat, palette.dark, false);
   const base = refsOf<PersonRefs>(g);
+  // Miners carry the pickaxe the whole time, idle or not — it is what marks them out in the
+  // yard before tier 4 gives them anything to swing it at.
+  if (kind === 'miner') base.toolMount.add(makeTool('pickaxe'));
   const ice = new THREE.Mesh(GEO.villagerIce, lam(COLORS.ice, 0.45));
   ice.position.y = 0.97;
   // A second, slightly smaller box of frost inside sells the "frozen solid" read that a single

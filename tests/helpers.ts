@@ -53,7 +53,11 @@ export const aCart = (over: Partial<Cart> = {}): Cart =>
   ({ id: 'c1', railId: 'r1', s: 0, dir: -1, load: 0, cap: 6, ...over });
 
 export const aVillager = (over: Partial<Villager> = {}): Villager =>
-  ({ id: 'v1', kind: 'rescued', pos: v(0, 1), state: 'frozen', carrying: null, amount: 0, ...over });
+  ({ id: 'v1', kind: 'rescued', pos: v(0, 1), state: 'frozen', carrying: null, amount: 0,
+     target: null, ...over });
 
 export const aCrew = (over: Partial<Villager> = {}): Villager =>
   aVillager({ id: 'crew0', kind: 'crew', state: 'hauler', ...over });
+
+export const aMiner = (over: Partial<Villager> = {}): Villager =>
+  aVillager({ id: 'miner0', kind: 'miner', state: 'hauler', pos: v(0, 0), ...over });

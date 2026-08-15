@@ -74,6 +74,15 @@ export function crewDefs(): Vec2[] {
   return [v(16.4, 1.7), v(18.0, 2.3), v(19.6, 1.7)];
 }
 
+/**
+ * The Grand Fort's gold crew (Amendment 3A). Two posts along the west side of the camp yard,
+ * where they wait for tier 4. The x is chosen to stand clear of every tier's west wall and of
+ * the depot stockpiles, which move around the yard as the camp grows.
+ */
+export function minerDefs(): Vec2[] {
+  return [v(15.4, 1.2), v(15.4, 2.8)];
+}
+
 export function villagerDefs(): Vec2[] {
   const defs: Vec2[] = [];
   for (let i = 0; i < 8; i++)

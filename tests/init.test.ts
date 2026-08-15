@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../src/game/init';
-import { PAD_RANGE, SELL_RATE, TREE_YIELD, thawCost } from '../src/content/balance';
+import { MINER_CAMP_TIER, PAD_RANGE, SELL_RATE, TREE_YIELD, thawCost } from '../src/content/balance';
 import type { ZoneId } from '../src/game/state';
 import { ZONE_RECTS } from '../src/content/map';
 import { dist, inRect } from '../src/game/math';
@@ -15,6 +15,7 @@ describe('createInitialState', () => {
     expect(state.seams.length).toBe(6);
     expect(state.villagers.filter((v) => v.kind === 'rescued').length).toBe(40);
     expect(state.villagers.filter((v) => v.kind === 'crew').length).toBe(3);
+    expect(state.villagers.filter((v) => v.kind === 'miner').length).toBe(2);
     expect(state.stations.map((s) => s.resource).sort()).toEqual(['gold', 'meat', 'wood']);
     expect(state.turrets.length).toBe(2);
     expect(state.sawmills.length).toBe(1);
@@ -65,6 +66,19 @@ describe('createInitialState', () => {
     expect(pads).toHaveLength(1);
     expect(pads[0].requires).toBe('p-camp3');
     expect(pads[0].currency).toBe('cash');
+  });
+
+  it('starts the miners idle inside the camp, waiting on the Grand Fort', () => {
+    const miners = state.villagers.filter((v) => v.kind === 'miner');
+    expect(state.campTier).toBeLessThan(MINER_CAMP_TIER);
+    for (const m of miners) {
+      expect(m.state).toBe('hauler');
+      expect(m.target).toBeNull();
+      expect(dist(m.pos, state.depotPos)).toBeLessThan(4);
+    }
+    // No pad of their own: the Grand Fort itself is what puts them to work.
+    const camp4 = state.pads.filter((p) => p.effect.type === 'camp' && p.effect.tier === 4);
+    expect(camp4).toHaveLength(1);
   });
 
   it('camp pads cover tiers 1-4 exactly once each', () => {

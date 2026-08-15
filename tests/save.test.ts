@@ -126,6 +126,24 @@ describe('save round-trip', () => {
     expect(hauler.amount).toBe(3);
   });
 
+  it('restores the miners from the camp tier without a save field of their own', () => {
+    const state = createInitialState();
+    const camp4 = state.pads.find((p) => p.effect.type === 'camp' && p.effect.tier === 4)!;
+    camp4.done = true; camp4.paid = camp4.cost;
+    state.campTier = 4;
+    const miner = state.villagers.find((v) => v.kind === 'miner')!;
+    miner.target = 'seam3'; // mid-cycle claims are transient, like a hauler's cargo route
+
+    const restored = deserialize(serialize(state));
+
+    expect(restored.campTier).toBe(4);
+    const miners = restored.villagers.filter((v) => v.kind === 'miner');
+    expect(miners).toHaveLength(2);
+    expect(miners.every((v) => v.state === 'hauler' && v.target === null)).toBe(true);
+    expect(restored.rescued).toBe(0); // miners are staff, never rescues
+    expect(serialize(state)).not.toContain('miner0');
+  });
+
   it('keeps customer numbering above a game that is already running', () => {
     const json = serialize(createInitialState());
     const live = createInitialState();

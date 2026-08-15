@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { villagersTick } from '../src/game/systems/villagers';
+import { MINER_CAMP_TIER, SEAM_YIELD } from '../src/content/balance';
+import { ZONE_RECTS } from '../src/content/map';
 import { v } from '../src/game/math';
-import { aCrew, aStation, aVillager, blankState } from './helpers';
+import { aCrew, aMiner, aSeam, aStation, aVillager, blankState } from './helpers';
 
 function ticks(state: ReturnType<typeof blankState>, seconds: number): void {
   const dt = 1 / 60;
@@ -84,6 +86,17 @@ describe('villagersTick', () => {
     expect(state.villagers[0].state).toBe('hauler');
   });
 
+  it('never counts miners as rescued, thawed or frozen', () => {
+    const state = blankState();
+    state.campTier = MINER_CAMP_TIER;
+    state.player.carry.meat = 20;
+    state.villagers.push(aMiner({ pos: v(0, 0.5) })); // right on top of the player
+    ticks(state, 2);
+    expect(state.rescued).toBe(0);
+    expect(state.player.carry.meat).toBe(20);
+    expect(state.villagers[0].state).toBe('hauler');
+  });
+
   it('haulers idle at an empty depot', () => {
     const state = blankState();
     state.depotPos = v(3, 0);
@@ -92,5 +105,92 @@ describe('villagersTick', () => {
     ticks(state, 2);
     expect(state.villagers[0].carrying).toBeNull();
     expect(state.stations[0].stock).toBe(0);
+  });
+});
+
+describe('Grand Fort miners', () => {
+  /** A miner at the depot with one seam a short walk away. */
+  function mining(over: Parameters<typeof aMiner>[0] = {}): ReturnType<typeof blankState> {
+    const state = blankState();
+    state.depotPos = v(0, 0);
+    state.campTier = MINER_CAMP_TIER;
+    state.seams.push(aSeam({ id: 'seam0', pos: v(6, 0) }));
+    state.villagers.push(aMiner({ pos: v(0, 0), ...over }));
+    return state;
+  }
+
+  it('stands idle below the Grand Fort and goes to work at it', () => {
+    const idle = mining();
+    idle.campTier = MINER_CAMP_TIER - 1;
+    ticks(idle, 5);
+    expect(idle.villagers[0].pos).toEqual(v(0, 0));
+    expect(idle.villagers[0].target).toBeNull();
+    expect(idle.seams[0].hp).toBe(4);
+
+    const working = mining();
+    ticks(working, 5);
+    expect(working.villagers[0].target).toBe('seam0');
+    expect(working.seams[0].hp).toBeLessThan(4);
+  });
+
+  it('runs the full seam → depot cycle and banks the gold', () => {
+    const state = mining();
+    // ~1.5 s out, 4 s mining, ~1.7 s back.
+    ticks(state, 10);
+    expect(state.depot.gold).toBe(SEAM_YIELD);
+    expect(state.villagers[0].carrying).toBeNull();
+    // The seam is on its respawn timer, exactly as if the player had mined it out.
+    expect(state.seams[0].respawn).toBeGreaterThan(0);
+    expect(state.seams[0].hp).toBe(0);
+    // And it goes straight back out for the next one once the seam comes back.
+    state.seams[0].respawn = 0;
+    state.seams[0].hp = 4;
+    ticks(state, 10);
+    expect(state.depot.gold).toBe(SEAM_YIELD * 2);
+  });
+
+  it('never lets two miners drain one seam at twice the rate', () => {
+    const state = mining();
+    state.villagers.push(aMiner({ id: 'miner1', pos: v(0, 0) }));
+    ticks(state, 3);
+    const claims = state.villagers.map((m) => m.target);
+    expect(claims.filter((t) => t === 'seam0')).toHaveLength(1);
+    expect(claims).toContain(null); // the second miner found nothing free and went idle
+    // 3 s of walking-then-mining can never have removed more than 3 hp at 1 hp/s.
+    expect(state.seams[0].hp).toBeGreaterThan(1);
+  });
+
+  it('will not walk to a seam behind a gate that is still shut', () => {
+    const state = mining();
+    // Inside the quarry rect, which this save has not opened.
+    state.seams[0] = aSeam({ id: 'seam0', zone: 'quarry', pos: v(-45, -20) });
+    ticks(state, 5);
+    expect(state.villagers[0].target).toBeNull();
+    expect(state.seams[0].hp).toBe(4);
+  });
+
+  it('will not cross a sealed zone to reach a seam beyond it', () => {
+    const state = mining();
+    // Open ground on the far side of the sealed hunting grounds: reachable only by walking
+    // straight through them, which a miner must not do.
+    const hunt = ZONE_RECTS.hunting;
+    state.depotPos = v(hunt.x0 - 10, (hunt.z0 + hunt.z1) / 2);
+    state.seams[0] = aSeam({ id: 'seam0', pos: v(hunt.x1 + 10, (hunt.z0 + hunt.z1) / 2) });
+    state.villagers[0].pos = v(state.depotPos.x, state.depotPos.z);
+    ticks(state, 5);
+    expect(state.villagers[0].target).toBeNull();
+    expect(state.seams[0].hp).toBe(4);
+
+    state.zonesOpen.hunting = true; // the gate opens and the route is on
+    ticks(state, 1);
+    expect(state.villagers[0].target).toBe('seam0');
+  });
+
+  it('waits at the depot when every seam is on respawn', () => {
+    const state = mining({ pos: v(6, 0) });
+    state.seams[0].respawn = 10;
+    ticks(state, 5);
+    expect(state.villagers[0].target).toBeNull();
+    expect(state.villagers[0].pos).toEqual(v(0, 0)); // walked home
   });
 });

@@ -1,6 +1,6 @@
 import { createInitialState } from './init';
 import { activateMachine } from './systems/pads';
-import type { GameState } from './state';
+import type { GameState, ZoneId } from './state';
 
 const KEY = 'frostfall-save-v1';
 
@@ -9,10 +9,12 @@ interface SaveData {
   won: boolean;
   player: GameState['player'];
   padsDone: string[];
-  zonesOpen: Record<string, boolean>;
+  padsPaid: Record<string, number>;
+  zonesOpen: Partial<Record<ZoneId, boolean>>;
   thawed: string[];
   depot: GameState['depot'];
   machineOutputs: Record<string, number>;
+  matCash: Record<string, number>;
   stats: GameState['stats'];
 }
 
@@ -22,6 +24,7 @@ export function serialize(state: GameState): string {
     won: state.won,
     player: state.player,
     padsDone: state.pads.filter((p) => p.done).map((p) => p.id),
+    padsPaid: Object.fromEntries(state.pads.filter((p) => !p.done && p.paid > 0).map((p) => [p.id, p.paid])),
     zonesOpen: state.zonesOpen,
     thawed: state.villagers.filter((v) => v.state !== 'frozen').map((v) => v.id),
     depot: state.depot,
@@ -29,6 +32,7 @@ export function serialize(state: GameState): string {
       ...state.turrets.map((t) => [t.id, t.output]),
       ...state.sawmills.map((s) => [s.id, s.output]),
     ]),
+    matCash: Object.fromEntries(state.stations.filter((s) => s.matCash > 0).map((s) => [s.id, s.matCash])),
     stats: state.stats,
   };
   return JSON.stringify(data);
@@ -42,6 +46,9 @@ export function serialize(state: GameState): string {
  */
 export function deserialize(json: string): GameState {
   const data = JSON.parse(json) as SaveData;
+  if (!data || !data.player || !data.depot || !data.stats || !Array.isArray(data.padsDone)) {
+    throw new Error('unrecognized save shape');
+  }
   const state = createInitialState();
   state.time = data.time;
   state.won = data.won;
@@ -50,6 +57,10 @@ export function deserialize(json: string): GameState {
   for (const pad of state.pads) {
     if (data.padsDone.includes(pad.id)) { pad.done = true; pad.paid = pad.cost; }
   }
+  for (const pad of state.pads) {
+    if (!pad.done) pad.paid = data.padsPaid?.[pad.id] ?? 0;
+  }
+  for (const st of state.stations) st.matCash = data.matCash?.[st.id] ?? 0;
   for (const pad of state.pads) {
     if (pad.done && pad.effect.type === 'machine') activateMachine(state, pad.effect.machineId);
   }

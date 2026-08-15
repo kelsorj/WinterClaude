@@ -50,4 +50,27 @@ describe('save round-trip', () => {
     state.won = true;
     expect(deserialize(serialize(state)).won).toBe(true);
   });
+
+  it('preserves partial pad payments and uncollected mat cash', () => {
+    const state = createInitialState();
+    const pad = state.pads.find((p) => p.id === 'p-scythe')!;
+    pad.paid = 33;
+    state.stations[0].matCash = 44;
+    const restored = deserialize(serialize(state));
+    expect(restored.pads.find((p) => p.id === 'p-scythe')?.paid).toBe(33);
+    expect(restored.stations[0].matCash).toBe(44);
+  });
+
+  it('drops in-transit cart cargo on reload (accepted loss)', () => {
+    const state = createInitialState();
+    state.carts[0].load = 5;
+    state.carts[0].s = 10;
+    const restored = deserialize(serialize(state));
+    expect(restored.carts[0].load).toBe(0);
+    expect(restored.carts[0].s).toBe(0);
+  });
+
+  it('rejects malformed saves', () => {
+    expect(() => deserialize('{"depot": null, "stats": null}')).toThrow();
+  });
 });

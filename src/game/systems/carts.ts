@@ -1,5 +1,5 @@
 import { CART_SPEED } from '../../content/balance';
-import { pointOnPolyline, polylineLength, type Vec2 } from '../math';
+import { pointOnPolyline, polylineLength, v, type Vec2 } from '../math';
 import type { Cart, GameState, Rail, ResourceKind } from '../state';
 
 export function railResource(rail: Rail): ResourceKind {
@@ -17,8 +17,8 @@ function takeFromSource(state: GameState, rail: Rail, n: number): number {
 }
 
 export function cartPos(state: GameState, cart: Cart): Vec2 {
-  const rail = state.rails.find((r) => r.id === cart.railId)!;
-  return pointOnPolyline(rail.points, cart.s);
+  const rail = state.rails.find((r) => r.id === cart.railId);
+  return rail ? pointOnPolyline(rail.points, cart.s) : v(0, 0);
 }
 
 export function cartsTick(state: GameState, dt: number): void {

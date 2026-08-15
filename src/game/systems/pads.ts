@@ -53,6 +53,7 @@ export function padsTick(state: GameState, dt: number): void {
       pad.paid = pad.cost;
       pad.done = true;
       applyEffect(state, pad);
+      // Clear float dust from fractional cash streaming so the HUD's floor() shows the true total.
       state.player.cash = Math.round(state.player.cash * 1e6) / 1e6;
       state.events.push({ type: 'unlock', pos: v(pad.pos.x, pad.pos.z) });
     }

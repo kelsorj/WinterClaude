@@ -69,4 +69,11 @@ describe('movePlayer', () => {
     movePlayer(state, v(1, 0), 10);
     expect(state.player.pos.x).toBe(60);
   });
+
+  it('blocks sneaking along the world edge through closed zones', () => {
+    const state = blankState();
+    state.player.pos = v(60, 0);
+    for (let i = 0; i < 600; i++) movePlayer(state, v(0, -1), 1 / 60); // press toward deepforest for 10s
+    expect(state.player.pos.z).toBeGreaterThanOrEqual(-6); // held at the zone edge
+  });
 });

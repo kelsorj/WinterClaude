@@ -12,12 +12,15 @@ export function createInput(el: HTMLElement): InputState {
   window.addEventListener('keyup', (e) => input.keys.delete(e.key.toLowerCase()));
   let anchor: { x: number; y: number } | null = null;
   el.addEventListener('pointerdown', (e) => { anchor = { x: e.clientX, y: e.clientY }; });
-  window.addEventListener('pointerup', () => { anchor = null; input.drag = null; });
+  const releasePointer = () => { anchor = null; input.drag = null; };
+  window.addEventListener('pointerup', releasePointer);
+  window.addEventListener('pointercancel', releasePointer);
   window.addEventListener('pointermove', (e) => {
     if (!anchor) return;
     const dx = e.clientX - anchor.x, dy = e.clientY - anchor.y;
     input.drag = Math.hypot(dx, dy) < 4 ? null : v(dx, dy);
   });
+  window.addEventListener('blur', () => input.keys.clear());
   return input;
 }
 

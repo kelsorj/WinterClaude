@@ -7,6 +7,7 @@ import { v } from './math';
 import type { GameState } from './state';
 
 export function createInitialState(): GameState {
+  const rails = railDefs();
   return {
     time: 0,
     player: {
@@ -26,8 +27,8 @@ export function createInitialState(): GameState {
     stations: stationDefs(),
     turrets: turretDefs(),
     sawmills: sawmillDefs(),
-    rails: railDefs(),
-    carts: railDefs().map((r, i) => ({
+    rails,
+    carts: rails.map((r, i) => ({
       id: `cart${i}`, railId: r.id, s: 0, dir: -1 as const, load: 0, cap: CART_CAP,
     })),
     depot: { wood: 0, meat: 0, gold: 0 },

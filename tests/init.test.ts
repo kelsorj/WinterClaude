@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createInitialState } from '../src/game/init';
 import { thawCost } from '../src/content/balance';
 import type { ZoneId } from '../src/game/state';
+import { ZONE_RECTS } from '../src/content/map';
+import { inRect } from '../src/game/math';
 
 describe('createInitialState', () => {
   const state = createInitialState();
@@ -75,5 +77,41 @@ describe('createInitialState', () => {
   it('thaw cost rises 2→6 across 40 villagers', () => {
     expect(thawCost(0)).toBe(2);
     expect(thawCost(39)).toBe(6);
+  });
+
+  it('pad requires graph is acyclic and every pad is reachable', () => {
+    const done = new Set<string>();
+    let progress = true;
+    while (progress) {
+      progress = false;
+      for (const pad of state.pads) {
+        if (!done.has(pad.id) && (!pad.requires || done.has(pad.requires))) {
+          done.add(pad.id);
+          progress = true;
+        }
+      }
+    }
+    expect(done.size).toBe(state.pads.length);
+  });
+
+  it('gated-zone entities sit inside their declared rect', () => {
+    for (const e of [...state.trees, ...state.seams, ...state.bears]) {
+      if (e.zone === 'start') continue;
+      expect(inRect(e.pos, ZONE_RECTS[e.zone])).toBe(true);
+    }
+  });
+
+  it('start-zone entities are outside all gated rects', () => {
+    for (const e of [...state.trees, ...state.seams, ...state.bears]) {
+      if (e.zone !== 'start') continue;
+      for (const rect of Object.values(ZONE_RECTS)) expect(inRect(e.pos, rect)).toBe(false);
+    }
+  });
+
+  it('gate pads sit outside the zone they open', () => {
+    for (const pad of state.pads) {
+      if (pad.effect.type !== 'gate') continue;
+      expect(inRect(pad.pos, ZONE_RECTS[pad.effect.zone as keyof typeof ZONE_RECTS])).toBe(false);
+    }
   });
 });

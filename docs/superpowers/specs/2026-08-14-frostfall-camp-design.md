@@ -237,3 +237,33 @@ look must hold up beside the ad's while staying procedural:
   drawn icon + price; build sites as dashed-outline pads (canvas texture).
 - **Reference:** compare against the extracted ad frames side by side during
   browser verification; the target is "same genre of polish", not identical.
+
+---
+
+## Amendment 2 — Shop queues and the fort hand-off crew (2026-08-15, user-directed)
+
+Two gaps versus the ad, reported from play:
+
+### A. Sell benches become shops with customer queues
+Benches no longer convert deposits into cash instantly. Each station holds
+**stock**: deposits (from the player, haulers, or the crew below) add to it,
+and the bench bubble's live count now shows stock. **Customers** — new NPC
+entities in varied warm-coat colors — walk in from the road ends, join a
+queue behind the bench (anchors extending away from the road, small shuffle
+spacing), and when at the front take up to 3 items and leave
+`amount × SELL_RATE` cash on the mat, then walk off and despawn. Customer
+arrivals scale with available stock (roughly one every ~2.5 s per stocked
+bench, queue capped ~6). Net economics are unchanged — the same cash arrives,
+now visibly carried in by a line of buyers like the ad. Customers are
+transient and not saved; station stock IS saved.
+
+### B. Fort hand-off crew (the ad's "mover" upgrade)
+A new unlock pad at the fort — **p-distributor, cash 100, requires p-camp3
+(Fort)** — activates a permanent 3-person **crew** (distinct coat color,
+present from game start but idle inside the camp until unlocked) who
+continuously carry depot goods to the matching benches' stock, exactly like
+rescued-villager haulers. This gives depot output an automatic path to sale
+without requiring any thawed villagers, fixing "the fort fills up with meat
+and nothing moves it." Crew members are not rescuable, don't count toward
+the rescued total or the win condition; the win now requires all 18 pads.
+Rescued-villager haulers keep working alongside the crew.

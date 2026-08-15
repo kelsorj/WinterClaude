@@ -13,7 +13,7 @@ export function blankState(): GameState {
     },
     trees: [], seams: [], bears: [], drops: [],
     pads: [], stations: [], customers: [], turrets: [], sawmills: [], rails: [], carts: [],
-    depot: { wood: 0, meat: 0, gold: 0 }, depotPos: v(18, 0),
+    depot: { wood: 0, meat: 0, gold: 0 }, depotPos: v(18, 0), depotTimer: 0,
     villagers: [],
     campTier: 0,
     distributorActive: false,

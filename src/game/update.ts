@@ -5,6 +5,7 @@ import { harvestTick } from './systems/harvest';
 import { bearsTick } from './systems/bears';
 import { pickupTick } from './systems/pickup';
 import { stationsTick } from './systems/stations';
+import { depotTick } from './systems/depot';
 import { customersTick } from './systems/customers';
 import { padsTick } from './systems/pads';
 import { machinesTick } from './systems/machines';
@@ -20,6 +21,7 @@ export function update(state: GameState, intent: Vec2, dt: number): void {
   bearsTick(state, dt);
   pickupTick(state, dt);
   stationsTick(state, dt);
+  depotTick(state, dt);
   customersTick(state, dt);
   padsTick(state, dt);
   machinesTick(state, dt);

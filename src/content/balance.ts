@@ -20,6 +20,24 @@ export const PAY_RATE = 12;      // currency per second into unlock pads
 export const STATION_RANGE = 2.2;
 export const PAD_RANGE = 1.8;
 
+/**
+ * Player depot withdrawal (Amendment 4A). Standing by the depot streams goods back OUT of it at
+ * the same `DEPOSIT_RATE` they go in, so the fort reads as a two-way counter rather than a hole.
+ *
+ * `DEPOT_RANGE` is a shade wider than `STATION_RANGE` because the depot's stockpiles move around
+ * the yard as the camp grows through its five tiers, so the pickup spot has to be generous
+ * enough to cover the pile wherever that tier parked it.
+ *
+ * `WITHDRAW_PAUSE` is the fraction of `carryCap` at which withdrawal stops. The player walks
+ * through the fort on the way to the benches and the pads, and a depot that topped them up on
+ * every pass would fight that: a pack over 80% full is one on its way somewhere to be emptied,
+ * so the counter leaves it alone. Below that there is room for a useful haul (at the base cap of
+ * 12 that is a 2-item margin, at the upgraded 48 a 9-item one) and topping up is what the player
+ * came over for.
+ */
+export const DEPOT_RANGE = 2.5;
+export const WITHDRAW_PAUSE = 0.8;
+
 export const TREE_HP = 3;
 export const TREE_YIELD = 2;
 

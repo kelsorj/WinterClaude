@@ -124,6 +124,8 @@ export interface GameState {
   carts: Cart[];
   depot: Record<ResourceKind, number>;
   depotPos: Vec2;
+  /** Fractional goods accrued toward the next whole unit of a player withdrawal. Transient. */
+  depotTimer: number;
   villagers: Villager[];
   /** Highest camp building tier bought (0 = bare clearing, 4 = grand fort). */
   campTier: number;

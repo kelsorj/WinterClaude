@@ -34,6 +34,7 @@ export function createInitialState(): GameState {
     })),
     depot: { wood: 0, meat: 0, gold: 0 },
     depotPos: v(DEPOT_POS.x, DEPOT_POS.z),
+    depotTimer: 0,
     villagers: [
       ...villagerDefs().map((p, i) => ({
         id: `vil${i}`, kind: 'rescued' as const, pos: v(p.x, p.z),

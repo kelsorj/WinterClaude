@@ -14,13 +14,13 @@ import type {
   VillagerRefs,
 } from './meshes';
 import {
-  BEAR_BODY_SCALE, CAMP_TIERS, COLORS, CUSTOMER_COATS, SHARED, bubbleTexture, lam, makeBear,
-  makeBench, makeCampTier, makeCarryUnit, makeCart, makeCompoundFence, makeCrate, makeCustomer,
-  makeDropMesh, makeFenceRun, makeGateWall, makeGoldMine, makeIconTextLabel, makeLanternPost,
-  makeMatMesh, makeMineCart, makePadLabel, makePadMesh, makePileStack, makePlayer, makePlaza,
-  makeRailMesh, makeRock, makeSawmill, makeSeam, makeSlab,
-  makeBubbleLabel, makeTextLabel, makeTool, makeTurret, makeVillager, padLabelTexture, refsOf,
-  snowflakeTexture, treeGeometries, treeMaterial,
+  BEAR_BODY_SCALE, CAMP_TIERS, COLORS, CUSTOMER_COATS, SHARED, bubbleTexture, lam, makeArrowTower,
+  makeBear, makeBench, makeBubbleLabel, makeCampTier, makeCarryUnit, makeCart, makeCompoundFence,
+  makeCrate, makeCustomer, makeDropMesh, makeFenceRun, makeGateWall, makeGoldMine,
+  makeIconTextLabel, makeLanternPost, makeMatMesh, makeMineCart, makePadLabel, makePadMesh,
+  makePileStack, makePlayer, makePlaza, makeRailMesh, makeRock, makeSawmill, makeSeam, makeSlab,
+  makeTextLabel, makeTool, makeTurret, makeVillager, padLabelTexture, refsOf, snowflakeTexture,
+  treeGeometries, treeMaterial,
 } from './meshes';
 
 const CAM_OFFSET = new THREE.Vector3(16, 20, 16);
@@ -563,7 +563,9 @@ export class Renderer {
       this.scene.add(g);
     }
     for (const turret of state.turrets) {
-      const g = setShadow(makeTurret(), true);
+      // Two different machines wearing one name: the hunting turrets out east are ground-level
+      // bear traps, the compound's arrow stations are watchtowers on its wall (Amendment 6B).
+      const g = setShadow(turret.dropsOnGround ? makeArrowTower() : makeTurret(), true);
       g.position.set(turret.pos.x, 0, turret.pos.z);
       this.meshes.set(turret.id, g);
       this.scene.add(g);
@@ -844,8 +846,9 @@ export class Renderer {
     const level = Math.max(this.mineFill, 0.001);
     fill.visible = this.mineFill > 0.02;
     fill.scale.y = level;
-    // The ore block is 0.5 tall centred at 0.58; grow it from the cart's floor, not its middle.
-    fill.position.y = 0.33 + 0.25 * level;
+    // The ore block is authored full to the rim (0.72 tall, centred at 0.76, floor at 0.40);
+    // grow it from the cart's floor rather than its middle.
+    fill.position.y = 0.4 + 0.36 * level;
   }
 
   /**

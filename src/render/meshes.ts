@@ -985,6 +985,53 @@ export function makeTurret(): THREE.Group {
   return g;
 }
 
+/**
+ * An arrow station (Amendment 6B): a timber watchtower on the compound's fence line, with a
+ * railed platform and a bow mounted on it. Deliberately NOT the hunting turret's mesh — those sit
+ * out in the wilderness farming bears, these are the camp's wall defence, and at this camera a
+ * waist-high turret standing among conifers on the north arc read as a piece of scenery rather
+ * than as the thing that just shot a bear. The platform clears the palisade by a body's height so
+ * the tower is visible over it from every angle.
+ */
+export function makeArrowTower(): THREE.Group {
+  const g = new THREE.Group();
+  const DECK = 2.7;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const leg = cyl(0.11, DECK * 1.04, COLORS.trunk);
+      leg.position.set(sx * 0.5, DECK / 2, sz * 0.5);
+      // Splayed, like the mine's headframe: a tower, not four sticks.
+      leg.rotation.z = -sx * 0.06;
+      leg.rotation.x = sz * 0.06;
+      g.add(leg);
+    }
+  }
+  // Cross bracing on all four sides, at the height it would actually be built at.
+  for (const [x, z, rotY] of [[0, 0.52, 0], [0, -0.52, 0], [0.52, 0, Math.PI / 2], [-0.52, 0, Math.PI / 2]] as const) {
+    const brace = box(1.1, 0.1, 0.1, COLORS.trunkDark);
+    brace.position.set(x, DECK * 0.45, z);
+    brace.rotation.y = rotY;
+    g.add(brace);
+  }
+  g.add(at(box(1.5, 0.16, 1.5, CAMP_WOOD), 0, DECK, 0));
+  // Railing: four short posts and a rail round the deck.
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const)
+    g.add(at(box(0.12, 0.5, 0.12, CAMP_RED_DARK), sx * 0.62, DECK + 0.33, sz * 0.62));
+  for (const [x, z, w, d] of [[0, 0.68, 1.44, 0.1], [0, -0.68, 1.44, 0.1], [0.68, 0, 0.1, 1.44], [-0.68, 0, 0.1, 1.44]] as const)
+    g.add(at(box(w, 0.1, d, CAMP_RED), x, DECK + 0.5, z));
+  // The bow itself, mounted on the deck.
+  const mount = at(cyl(0.13, 0.4, COLORS.trunkDark), 0, DECK + 0.28, 0);
+  g.add(mount);
+  const bowA = new THREE.Mesh(GEO.turretBowA, lam(0x8a5a33));
+  bowA.position.y = DECK + 0.52;
+  const bowB = new THREE.Mesh(GEO.turretBowB, lam(0x6b4a2b));
+  bowB.position.y = DECK + 0.52;
+  g.add(bowA, bowB);
+  g.add(at(box(1.6, 0.08, 1.6, COLORS.snowCap), 0, DECK + 0.1, 0));
+  freezeChildren(g);
+  return g;
+}
+
 export interface SawmillRefs { blade: THREE.Object3D }
 
 export function makeSawmill(): THREE.Group {
@@ -1240,10 +1287,12 @@ export interface MineRefs { fill: THREE.Object3D }
  */
 export function makeGoldMine(): THREE.Group {
   const g = new THREE.Group();
-  const H = 4.2, BASE = 1.5, TOP = 0.62;
+  // Built chunky on purpose: at this camera a slender frame reads as a pile of sticks, not as a
+  // mine head. These proportions put it between a gate tower and the fort in visual weight.
+  const H = 4.8, BASE = 2.1, TOP = 0.9;
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
-      const leg = cyl(0.14, H * 1.02, COLORS.trunk);
+      const leg = cyl(0.2, H * 1.02, COLORS.trunk);
       leg.position.set(sx * (BASE + TOP) / 2, H / 2, sz * (BASE + TOP) / 2);
       // Lean each leg in toward the top by the difference between the two footprints.
       leg.rotation.z = -sx * Math.atan2(BASE - TOP, H);
@@ -1252,22 +1301,27 @@ export function makeGoldMine(): THREE.Group {
     }
   }
   // Head: crossbeam, winding wheel and a snow-capped cap board.
-  g.add(at(box(TOP * 2 + 0.5, 0.2, 0.28, COLORS.machine), 0, H, 0));
-  const wheel = cyl(0.52, 0.14, 0x6f7b83);
+  g.add(at(box(TOP * 2 + 0.8, 0.28, 0.4, COLORS.machine), 0, H, 0));
+  const wheel = cyl(0.72, 0.18, 0x6f7b83);
   wheel.rotation.z = Math.PI / 2;
-  wheel.position.set(0, H + 0.42, 0);
+  wheel.position.set(0, H + 0.58, 0);
   g.add(wheel);
-  g.add(at(box(0.16, 0.66, 0.16, COLORS.trunkDark), 0, H + 0.15, 0));
-  g.add(at(box(TOP * 2 + 0.7, 0.12, 0.5, COLORS.snowCap), 0, H + 0.72, 0));
+  g.add(at(box(0.22, 0.9, 0.22, COLORS.trunkDark), 0, H + 0.2, 0));
+  g.add(at(box(TOP * 2 + 1.0, 0.16, 0.7, COLORS.snowCap), 0, H + 0.95, 0));
   // Braces: two diagonals down the working face, which is what stops it reading as a swing set.
   for (const sx of [-1, 1]) {
-    const brace = box(0.12, H * 0.62, 0.12, COLORS.trunkDark);
-    brace.position.set(sx * 0.75, H * 0.42, 0.62);
+    const brace = box(0.16, H * 0.62, 0.16, COLORS.trunkDark);
+    brace.position.set(sx * 1.0, H * 0.42, 0.85);
     brace.rotation.z = sx * 0.5;
     g.add(brace);
   }
   // Ore chute down to the cart, and a plank deck at the foot of the frame.
-  g.add(at(box(1.5, 0.14, 1.9, COLORS.machine), 0, 0.07, 0));
+  g.add(at(box(2.2, 0.16, 2.6, COLORS.machine), 0, 0.08, 0));
+  const chute = box(0.7, 0.16, 1.9, COLORS.trunkDark);
+  chute.position.set(1.35, 1.0, 0);
+  chute.rotation.z = -0.55;
+  chute.rotation.y = Math.PI / 2;
+  g.add(chute);
   freezeChildren(g);
   return g;
 }
@@ -1278,22 +1332,29 @@ export function makeGoldMine(): THREE.Group {
  */
 export function makeMineCart(): THREE.Group {
   const g = new THREE.Group();
-  g.add(at(box(1.3, 0.62, 0.9, 0x4d545a), 0, 0.55, 0));
-  g.add(at(box(1.36, 0.1, 0.96, 0x6a747c), 0, 0.86, 0));
+  // An open tub, not a solid block: the ore has to be visible IN the cart, and a filled box
+  // inside a closed one is a box inside a box. Floor, four walls, a lip around the rim.
+  const W = 1.7, D = 1.15, WALL = 0.11, RIM = 0.72;
+  g.add(at(box(W, 0.12, D, 0x3f464c), 0, 0.34, 0));
+  for (const sx of [-1, 1]) g.add(at(box(WALL, RIM, D, 0x4d545a), sx * (W / 2 - WALL / 2), 0.7, 0));
+  for (const sz of [-1, 1]) g.add(at(box(W, RIM, WALL, 0x4d545a), 0, 0.7, sz * (D / 2 - WALL / 2)));
+  for (const sz of [-1, 1]) g.add(at(box(W + 0.1, 0.09, 0.16, 0x6a747c), 0, 1.06, sz * (D / 2)));
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
-      const w = cyl(0.19, 0.1, 0x2f3439);
+      const w = cyl(0.24, 0.12, 0x2f3439);
       w.rotation.x = Math.PI / 2;
-      w.position.set(sx * 0.45, 0.22, sz * 0.42);
+      w.position.set(sx * 0.58, 0.24, sz * 0.5);
       g.add(w);
     }
   }
-  const fill = at(box(1.1, 0.5, 0.7, COLORS.gold), 0, 0.58, 0);
+  // Authored full to the rim; the renderer scales it down toward the floor (see `syncMine`).
+  const fill = at(box(W - WALL * 2.4, RIM, D - WALL * 2.4, COLORS.gold), 0, 0.76, 0);
   g.add(fill);
   // A couple of nuggets proud of the rim, so a full cart is unmistakably full of GOLD.
-  for (const [nx, nz] of [[-0.3, 0.15], [0.28, -0.12]] as const) {
+  for (const [nx, nz] of [[-0.38, 0.2], [0.34, -0.16], [0.05, 0.3]] as const) {
     const nug = new THREE.Mesh(GEO.seamNugget, lam(COLORS.gold));
-    nug.position.set(nx, 0.9, nz);
+    // In the fill's own frame, so nuggets ride on top of the ore as the cart fills.
+    nug.position.set(nx / (W - WALL * 2.4), 0.5, nz / (D - WALL * 2.4));
     fill.add(nug);
   }
   g.userData.refs = { fill } satisfies MineRefs;

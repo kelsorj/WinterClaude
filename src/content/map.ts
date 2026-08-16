@@ -36,6 +36,12 @@ export const ORIGINAL_MAP: Rect = { x0: -60, z0: -40, x1: 60, z1: 40 };
  */
 const ROAD_CLEAR = 10;
 
+/**
+ * How far around the fort is kept clear of trees: the plaza, its fence and a stride of snow
+ * outside it, so the compound reads as a clearing rather than a fort lost in the woods.
+ */
+const CLEARING_RADIUS = 15.5;
+
 /** Where the wilderness scatter is allowed to put things. */
 function inWilderness(p: Vec2): boolean {
   if (Math.abs(p.z) < ROAD_CLEAR) return false;
@@ -122,7 +128,13 @@ export function treeDefs(): { pos: Vec2; zone: ZoneId }[] {
     for (const z of [8.5, 18.5, 29.5])
       defs.push({ zone: 'hunting', pos: v(32 + i * 6 + rng() * 1.2, z + rng() * 1.2) });
   defs.push(...scatterWilderness(makeRng(1337), 5.0, 3.2));
-  return defs;
+  // The compound stands in a clearing (Amendment 6A). The starter forest's northern rows and the
+  // wilderness scatter both reach z = -9.5, which is inside the fence ring at radius 13 — before
+  // this, conifers grew through the plaza paving, buried the north palisade and hid the two arrow
+  // towers standing on it. Filtering here rather than reshaping four separate scatters keeps one
+  // rule in one place; it shifts the ids of every tree after the first cleared one, so a save
+  // written before this change regrows a handful of trees it had already felled.
+  return defs.filter((d) => dist(d.pos, DEPOT_POS) > CLEARING_RADIUS);
 }
 
 // ---------------------------------------------------------------------------

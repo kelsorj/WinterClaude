@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CAMP_FOOTPRINT, COMPOUND_RADIUS, DEPOT_POS, PLAZA_RADIUS, ZONE_RECTS, arrivalPath,
   compoundFencePosts, compoundGaps, departurePath, padDefs, queueAnchor, queueLaneX, railDefs,
-  stationDefs, stationRoadEnd, turretDefs,
+  stationDefs, stationRoadEnd, treeDefs, turretDefs,
 } from '../src/content/map';
 import { CUSTOMER_QUEUE_CAP, PAD_RANGE } from '../src/content/balance';
 import { dist, inRect, v } from '../src/game/math';
@@ -165,6 +165,17 @@ describe('camp compound layout', () => {
     // North and south, so the depot and the meat bench are both under cover.
     expect(arrows.filter((t) => t.pos.z > DEPOT_POS.z).length).toBeGreaterThanOrEqual(2);
     expect(arrows.filter((t) => t.pos.z < DEPOT_POS.z).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('stands the compound in a clearing, with nothing growing through it', () => {
+    // Browser verification found conifers growing up through the plaza paving and burying the
+    // north palisade and both towers on it: the starter forest's rows and the wilderness scatter
+    // both reach z = -9.5, well inside a ring of radius 13.
+    for (const tree of treeDefs()) {
+      expect(dist(tree.pos, DEPOT_POS)).toBeGreaterThan(PLAZA_RADIUS);
+    }
+    // The clearing is a clearing, not a deforestation: the forest is still all but intact.
+    expect(treeDefs().length).toBeGreaterThan(3000);
   });
 
   it('keeps every pad clear of the stands, their mats and their queues', () => {

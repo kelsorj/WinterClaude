@@ -11,12 +11,36 @@ miners, crossbow turrets, sawmills, and minecart lines. Defend the compound —
 bear packs raid your meat stores. There is no ending: repeatable expeditions
 push the world border outward forever, seeding fresh wilderness each time.
 
-## Play
+## Screenshots
+
+Customers queue at the compound's stands while the crew works the Grand Fort:
+
+![The Grand Fort compound with customer queues](docs/media/compound.png)
+
+The aftermath of a bear raid — arrow towers on the perimeter, and every steak
+on the snow was a raider:
+
+![Raid aftermath around the compound](docs/media/raid.png)
+
+The automated gold mine, its cart filling as the miners work the outcrops:
+
+![The gold mine headframe and cart](docs/media/goldmine.png)
+
+## Requirements
+
+- [Node.js](https://nodejs.org) 18 or newer (includes npm)
+- A desktop browser (Chrome or Safari recommended)
+
+## Install & play
 
 ```bash
+git clone https://github.com/kelsorj/WinterClaude.git
+cd WinterClaude
 npm install
-npm run dev        # then open the printed localhost URL
+npm run dev
 ```
+
+Open the URL Vite prints (usually `http://localhost:5173`) and you're playing.
 
 - **Move**: WASD / arrow keys, or click-drag
 - Everything else is proximity-based: stand near trees, bears, benches, or

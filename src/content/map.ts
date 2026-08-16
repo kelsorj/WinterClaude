@@ -291,6 +291,21 @@ const OUTCROPS: Vec2[] = [
   v(-140, 100), v(140, -110),
 ];
 
+/**
+ * Where the quarry's mine head stands (Amendment 6C): the centroid of the six quarry seams, which
+ * is the middle of the block the miners work. Content rather than a renderer constant because it
+ * is derived from the seam layout — move a seam row and the headframe follows it.
+ */
+export function goldMinePos(): Vec2 {
+  const quarry = seamDefs().filter((d) => d.zone === 'quarry');
+  const sum = quarry.reduce((acc, d) => v(acc.x + d.pos.x, acc.z + d.pos.z), v(0, 0));
+  return v(sum.x / quarry.length, sum.z / quarry.length);
+}
+
+/** Which way the mine's rail stub runs out of the headframe, and how long it is. */
+export const MINE_RAIL_DIR: Vec2 = v(1, 0);
+export const MINE_RAIL_LENGTH = 4.6;
+
 export function seamDefs(): { pos: Vec2; zone: ZoneId }[] {
   const defs: { pos: Vec2; zone: ZoneId }[] = [];
   for (let i = 0; i < 6; i++)

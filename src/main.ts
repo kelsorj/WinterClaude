@@ -58,6 +58,16 @@ if (import.meta.env.DEV) {
       for (let t = 0; t < seconds; t += FIXED) update(state, { x: 0, z: 0 }, FIXED);
       return state.time;
     },
+    stats: () => renderer.stats(),
+    /** Milliseconds per frame of sync + draw, averaged over `n` frames back to back. */
+    bench: (n = 60) => {
+      const t0 = performance.now();
+      for (let i = 0; i < n; i++) {
+        renderer.sync(state, FIXED);
+        renderer.render(FIXED);
+      }
+      return (performance.now() - t0) / n;
+    },
   };
 }
 let acc = 0;

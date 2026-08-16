@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { Currency, ToolId, VillagerKind } from '../game/state';
+import type { Currency, ResourceKind, ToolId, VillagerKind } from '../game/state';
 
 /**
  * Every geometry, material and texture created at module scope is registered here. The renderer
@@ -76,7 +76,6 @@ const GEO = {
   bearNose: reg(new THREE.SphereGeometry(0.11, 6, 6)),
   bearLeg: reg(new THREE.CylinderGeometry(0.24, 0.26, 0.55, 7)),
   bearTail: reg(new THREE.SphereGeometry(0.17, 6, 6)),
-  villagerLoad: reg(new THREE.BoxGeometry(0.5, 0.4, 0.5)),
   benchTop: reg(new THREE.BoxGeometry(2.4, 0.24, 1.05)),
   benchBase: reg(new THREE.BoxGeometry(2.1, 0.66, 0.85)),
   benchLeg: reg(new THREE.BoxGeometry(0.22, 0.7, 0.22)),
@@ -106,9 +105,13 @@ const GEO = {
   /** One bill/crate box; piles stack these in a grid rather than scaling a single block. */
   pileBox: reg(new THREE.BoxGeometry(0.46, 0.16, 0.34)),
   dropWood: reg(new THREE.CylinderGeometry(0.18, 0.18, 0.8, 6)),
-  dropMeat: reg(new THREE.BoxGeometry(0.5, 0.35, 0.4)),
-  dropGold: reg(new THREE.BoxGeometry(0.5, 0.28, 0.3)),
-  dropCash: reg(new THREE.BoxGeometry(0.5, 0.08, 0.3)),
+  /** Ministeak parts (Amendment 6C): a flat slab with rounded ends and a marbling stripe. */
+  steakSlab: reg(new THREE.BoxGeometry(0.34, 0.12, 0.30)),
+  steakEnd: reg(new THREE.SphereGeometry(0.5, 8, 6)),
+  steakStripe: reg(new THREE.BoxGeometry(0.30, 0.04, 0.09)),
+  /** Ingot parts: a bar with a lighter top face, small enough to stack in an armful. */
+  ingotBody: reg(new THREE.BoxGeometry(0.34, 0.13, 0.22)),
+  ingotTop: reg(new THREE.BoxGeometry(0.26, 0.04, 0.16)),
 };
 
 /** Props never move once placed: bake child matrices once and stop paying for them each frame. */
@@ -428,6 +431,47 @@ export function makeDashedDisc(): THREE.Mesh {
   return m;
 }
 
+/**
+ * The cash brick (Amendment 6C). Every bill stack in the game — the benches' mats, a cash drop,
+ * the vault — draws with this one texture: a green note, a lighter band across the middle, a
+ * bold $ and the faint two-row pattern of a bundle seen edge-on. Painted rather than tinted for
+ * the same reason every icon in the game is painted: the reference frame's money reads as MONEY
+ * at a glance, and a flat green box does not.
+ *
+ * One canvas, one material, module-level, in SHARED: a busy camp can have a dozen mats and
+ * several hundred bill boxes on screen and they all share it.
+ */
+let billTex: THREE.CanvasTexture | null = null;
+export function billTexture(): THREE.CanvasTexture {
+  if (billTex) return billTex;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#39a24c';
+  ctx.fillRect(0, 0, 128, 128);
+  // Two courses of notes, the seam between them a shade darker: a stack, not a slab.
+  ctx.fillStyle = '#2f8b41';
+  for (let row = 0; row < 2; row++) ctx.fillRect(0, 60 + row * 34, 128, 4);
+  ctx.fillStyle = '#4fbf62';
+  ctx.fillRect(0, 40, 128, 46);
+  ctx.strokeStyle = '#276f34';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(6, 42, 116, 42);
+  ctx.fillStyle = '#155e28';
+  ctx.font = 'bold 44px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('$', 64, 65);
+  billTex = reg(new THREE.CanvasTexture(canvas));
+  return billTex;
+}
+
+let billMat: THREE.MeshLambertMaterial | null = null;
+export function billMaterial(): THREE.MeshLambertMaterial {
+  if (!billMat) billMat = reg(new THREE.MeshLambertMaterial({ map: billTexture() }));
+  return billMat;
+}
+
 /** Soft round snowflake: a radial-gradient sprite, so particles are dots rather than squares. */
 let snowTex: THREE.CanvasTexture | null = null;
 export function snowflakeTexture(): THREE.CanvasTexture {
@@ -653,7 +697,10 @@ export function makeTool(kind: ToolId | 'pickaxe'): THREE.Group {
   return g;
 }
 
-export interface VillagerRefs extends PersonRefs { load: THREE.Mesh }
+export interface VillagerRefs extends PersonRefs {
+  /** One prebuilt armful per commodity; the renderer shows whichever is being carried. */
+  loads: Record<ResourceKind, THREE.Object3D>;
+}
 
 /**
  * The fort's hand-off crew wears hi-vis orange and the Grand Fort's miners slate grey, so each
@@ -672,11 +719,18 @@ export function makeVillager(kind: VillagerKind = 'crew'): THREE.Group {
   // Miners carry the pickaxe the whole time, idle or not — it is what marks them out in the
   // yard before tier 4 gives them anything to swing it at.
   if (kind === 'miner') base.toolMount.add(makeTool('pickaxe'));
-  const load = new THREE.Mesh(GEO.villagerLoad, lam(COLORS.wood));
-  load.position.set(0, 1.1, -0.45);
-  load.visible = false;
-  g.add(load);
-  g.userData.refs = { ...base, load } satisfies VillagerRefs;
+  // All three armfuls are built once and hidden: there are seven of these people in the game and
+  // they change cargo constantly, so swapping visibility beats rebuilding a stack per trip.
+  const kinds: ResourceKind[] = ['wood', 'meat', 'gold'];
+  const loads = {} as Record<ResourceKind, THREE.Object3D>;
+  for (const res of kinds) {
+    const stack = makeCommodityStack(res, 3);
+    stack.position.set(0, 1.0, -0.45);
+    stack.visible = false;
+    loads[res] = stack;
+    g.add(stack);
+  }
+  g.userData.refs = { ...base, loads } satisfies VillagerRefs;
   return g;
 }
 
@@ -691,14 +745,20 @@ export const CUSTOMER_COATS: { coat: number; dark: number }[] = [
   { coat: 0xd06fa0, dark: 0xa54f7c }, // rose
 ];
 
-export interface CustomerRefs extends PersonRefs { load: THREE.Mesh }
+export interface CustomerRefs extends PersonRefs { load: THREE.Object3D }
 
-export function makeCustomer(coatIndex: number): THREE.Group {
+/**
+ * A shopper. Unlike a villager it only ever carries one commodity — the one its bench sells — so
+ * its armful is built for that kind alone and nothing is swapped. That matters: there can be
+ * seventy shoppers on screen at once, and three hidden armfuls apiece would be hundreds of meshes
+ * that are never shown.
+ */
+export function makeCustomer(coatIndex: number, resource: ResourceKind = 'wood'): THREE.Group {
   const palette = CUSTOMER_COATS[coatIndex % CUSTOMER_COATS.length];
   const g = makePerson(palette.coat, palette.dark, false);
   // Shown only on the way out, so a served shopper visibly carries its purchase off the map.
-  const load = new THREE.Mesh(GEO.villagerLoad, lam(COLORS.wood));
-  load.position.set(0, 1.1, -0.45);
+  const load = makeCommodityStack(resource, 2);
+  load.position.set(0, 1.0, -0.45);
   load.visible = false;
   g.add(load);
   g.userData.refs = { ...refsOf<PersonRefs>(g), load } satisfies CustomerRefs;
@@ -1016,26 +1076,107 @@ export function makeGateWall(length: number): THREE.Group {
 }
 
 // ---------------------------------------------------------------------------
+// Commodities: ministeaks and ingots (Amendment 6C)
+// ---------------------------------------------------------------------------
+
+const MEAT_DARK = 0xc4453d, MEAT_MARBLE = 0xf09a90;
+const GOLD_LIGHT = 0xffd75c;
+
+/**
+ * A ministeak: a flat slab with rounded ends and a paler marbling stripe, merged down to one
+ * vertex-coloured buffer. Merged rather than grouped because these come in HUNDREDS — a depot
+ * stockpile, a bench's stock, every carried armful and every drop — and four meshes apiece would
+ * be the biggest object count in the scene after the forest.
+ */
+let steakGeo: THREE.BufferGeometry | null = null;
+export function steakGeometry(): THREE.BufferGeometry {
+  if (steakGeo) return steakGeo;
+  const parts = [
+    part(GEO.steakSlab, new THREE.Matrix4(), COLORS.meat),
+    part(GEO.steakStripe, new THREE.Matrix4().makeTranslation(0, 0.05, 0.02), MEAT_MARBLE),
+  ];
+  // Rounded ends: a squashed sphere at each end of the slab, so it reads as a cut of meat
+  // rather than a brick.
+  for (const sx of [-1, 1]) {
+    parts.push(part(
+      GEO.steakEnd,
+      new THREE.Matrix4().makeScale(0.26, 0.12, 0.30).setPosition(sx * 0.17, 0, 0),
+      sx < 0 ? COLORS.meat : MEAT_DARK,
+    ));
+  }
+  steakGeo = reg(mergeGeometries(parts));
+  for (const g of parts) g.dispose();
+  return steakGeo;
+}
+
+/** A small gold bar with a lit top face, merged the same way and for the same reason. */
+let ingotGeo: THREE.BufferGeometry | null = null;
+export function ingotGeometry(): THREE.BufferGeometry {
+  if (ingotGeo) return ingotGeo;
+  const parts = [
+    part(GEO.ingotBody, new THREE.Matrix4(), COLORS.gold),
+    part(GEO.ingotTop, new THREE.Matrix4().makeTranslation(0, 0.08, 0), GOLD_LIGHT),
+  ];
+  ingotGeo = reg(mergeGeometries(parts));
+  for (const g of parts) g.dispose();
+  return ingotGeo;
+}
+
+/**
+ * One unit of a commodity, as the game draws it everywhere it is held rather than stored: wood is
+ * a plain billet, meat a ministeak, gold an ingot, cash a bundle of notes. Used by the player's
+ * carry stack, by carried loads and by ground drops, so a load of meat looks the same on a
+ * shopper's back as it does in a pile on the bench.
+ */
+export function makeCommodity(kind: Currency): THREE.Mesh {
+  if (kind === 'meat') return new THREE.Mesh(steakGeometry(), vertexColorMaterial());
+  if (kind === 'gold') return new THREE.Mesh(ingotGeometry(), vertexColorMaterial());
+  if (kind === 'cash') return new THREE.Mesh(GEO.pileBox, billMaterial());
+  return new THREE.Mesh(GEO.carryBox, lam(COLORS.wood));
+}
+
+/**
+ * An armful of one commodity: `count` units stacked, capped so a big load does not turn into a
+ * tower. Villagers, shoppers and drops all carry these.
+ */
+export function makeCommodityStack(kind: Currency, count = 3): THREE.Group {
+  const g = new THREE.Group();
+  const dy = kind === 'meat' ? 0.13 : kind === 'gold' ? 0.15 : 0.2;
+  for (let i = 0; i < count; i++) {
+    const unit = makeCommodity(kind);
+    unit.position.set(((i % 2) - 0.5) * 0.06, i * dy, 0);
+    unit.rotation.y = (i % 2) * 0.25;
+    g.add(unit);
+  }
+  freezeChildren(g);
+  return g;
+}
+
+// ---------------------------------------------------------------------------
 // Drops, carry stack, resource piles
 // ---------------------------------------------------------------------------
 
-const DROP_PARTS: Record<Currency, { geo: THREE.BufferGeometry; color: number; rotZ: number }> = {
-  wood: { geo: GEO.dropWood, color: COLORS.wood, rotZ: Math.PI / 2 },
-  meat: { geo: GEO.dropMeat, color: COLORS.meat, rotZ: 0 },
-  gold: { geo: GEO.dropGold, color: COLORS.gold, rotZ: 0 },
-  cash: { geo: GEO.dropCash, color: COLORS.cash, rotZ: 0 },
-};
-
-export function makeDropMesh(kind: Currency): THREE.Mesh {
-  const parts = DROP_PARTS[kind];
-  const m = new THREE.Mesh(parts.geo, lam(parts.color));
-  m.rotation.z = parts.rotZ;
+/**
+ * A dropped good, spinning on the snow. Wood is still a billet of log; meat, gold and cash are
+ * the same ministeak, ingot and bundle the piles and the carried loads are made of (Amendment
+ * 6C), so a bear's kill on the ground reads as the meat it becomes in the depot.
+ */
+export function makeDropMesh(kind: Currency): THREE.Object3D {
+  if (kind === 'wood') {
+    const m = new THREE.Mesh(GEO.dropWood, lam(COLORS.wood));
+    m.rotation.z = Math.PI / 2;
+    m.position.y = 0.3;
+    return m;
+  }
+  const m = makeCommodity(kind);
+  m.scale.setScalar(1.3); // a lone drop is read from further away than one in a stack
   m.position.y = 0.3;
   return m;
 }
 
-export function makeCarryBox(color: number): THREE.Mesh {
-  return new THREE.Mesh(GEO.carryBox, lam(color));
+/** One course of the player's carry stack, in the commodity's own shape. */
+export function makeCarryUnit(kind: Currency): THREE.Object3D {
+  return makeCommodity(kind);
 }
 
 /** Grid stack layout: three boxes wide, two deep, then a new course on top. */
@@ -1044,26 +1185,133 @@ const PILE_ROWS = 2;
 const PILE_DX = 0.52, PILE_DZ = 0.4, PILE_DY = 0.17;
 
 /**
+ * What a pile is made of (Amendment 6C). 'crate' is the original box, still what wood and gold
+ * stockpiles are; 'bills' is the textured cash brick the mats are paid out in; 'steak' stacks
+ * ministeaks into columns the way the reference frame's meat does.
+ */
+export type PileStyle = 'crate' | 'bills' | 'steak';
+
+/** Per-style course height: a ministeak is a third of the thickness of a crate. */
+const PILE_STYLE_DY: Record<PileStyle, number> = { crate: PILE_DY, bills: PILE_DY, steak: 0.13 };
+
+/**
  * A capped grid of boxes, all hidden until `syncPile` reveals as many as the stored amount
  * earns. Cash mats read as the ad's bundled bill stacks; machine and depot piles reuse the
  * same look in their commodity colour.
  */
-export function makePileStack(color: number, cap: number): THREE.Group {
+export function makePileStack(color: number, cap: number, style: PileStyle = 'crate'): THREE.Group {
   const g = new THREE.Group();
+  const dy = PILE_STYLE_DY[style];
   for (let i = 0; i < cap; i++) {
-    const b = new THREE.Mesh(GEO.pileBox, lam(color));
+    const b = style === 'steak'
+      ? new THREE.Mesh(steakGeometry(), vertexColorMaterial())
+      : new THREE.Mesh(GEO.pileBox, style === 'bills' ? billMaterial() : lam(color));
     const layer = Math.floor(i / (PILE_COLS * PILE_ROWS));
     const within = i % (PILE_COLS * PILE_ROWS);
     const col = within % PILE_COLS;
     const row = Math.floor(within / PILE_COLS);
     b.position.set(
       (col - (PILE_COLS - 1) / 2) * PILE_DX,
-      0.09 + layer * PILE_DY,
+      0.09 + layer * dy,
       (row - (PILE_ROWS - 1) / 2) * PILE_DZ,
     );
+    // Alternate the lie of each course so a tall column of steaks reads as stacked cuts.
+    if (style === 'steak') b.rotation.y = layer % 2 === 0 ? 0 : Math.PI / 2;
     b.visible = false;
     g.add(b);
   }
+  freezeChildren(g);
+  return g;
+}
+
+// ---------------------------------------------------------------------------
+// The gold mine and compound props (Amendment 6C)
+// ---------------------------------------------------------------------------
+
+export interface MineRefs { fill: THREE.Object3D }
+
+/**
+ * The quarry's mine head: a timber headframe over the main seam cluster, a winding wheel on its
+ * crossbeam, a short rail stub and a mine cart that fills with gold as the miners work.
+ *
+ * The frame is four splayed legs rather than four uprights — a headframe carries a hoist, and
+ * splayed legs are what makes it read as one at this camera angle instead of as a table. The
+ * cart's gold is a single box scaled from its floor, so "filling" costs one scale write a frame.
+ */
+export function makeGoldMine(): THREE.Group {
+  const g = new THREE.Group();
+  const H = 4.2, BASE = 1.5, TOP = 0.62;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const leg = cyl(0.14, H * 1.02, COLORS.trunk);
+      leg.position.set(sx * (BASE + TOP) / 2, H / 2, sz * (BASE + TOP) / 2);
+      // Lean each leg in toward the top by the difference between the two footprints.
+      leg.rotation.z = -sx * Math.atan2(BASE - TOP, H);
+      leg.rotation.x = sz * Math.atan2(BASE - TOP, H);
+      g.add(leg);
+    }
+  }
+  // Head: crossbeam, winding wheel and a snow-capped cap board.
+  g.add(at(box(TOP * 2 + 0.5, 0.2, 0.28, COLORS.machine), 0, H, 0));
+  const wheel = cyl(0.52, 0.14, 0x6f7b83);
+  wheel.rotation.z = Math.PI / 2;
+  wheel.position.set(0, H + 0.42, 0);
+  g.add(wheel);
+  g.add(at(box(0.16, 0.66, 0.16, COLORS.trunkDark), 0, H + 0.15, 0));
+  g.add(at(box(TOP * 2 + 0.7, 0.12, 0.5, COLORS.snowCap), 0, H + 0.72, 0));
+  // Braces: two diagonals down the working face, which is what stops it reading as a swing set.
+  for (const sx of [-1, 1]) {
+    const brace = box(0.12, H * 0.62, 0.12, COLORS.trunkDark);
+    brace.position.set(sx * 0.75, H * 0.42, 0.62);
+    brace.rotation.z = sx * 0.5;
+    g.add(brace);
+  }
+  // Ore chute down to the cart, and a plank deck at the foot of the frame.
+  g.add(at(box(1.5, 0.14, 1.9, COLORS.machine), 0, 0.07, 0));
+  freezeChildren(g);
+  return g;
+}
+
+/**
+ * The mine cart on the stub. `fill` is a block of ore scaled from the cart floor, so the renderer
+ * can show how much gold the miners have moved lately without the cart owning any state.
+ */
+export function makeMineCart(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(at(box(1.3, 0.62, 0.9, 0x4d545a), 0, 0.55, 0));
+  g.add(at(box(1.36, 0.1, 0.96, 0x6a747c), 0, 0.86, 0));
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      const w = cyl(0.19, 0.1, 0x2f3439);
+      w.rotation.x = Math.PI / 2;
+      w.position.set(sx * 0.45, 0.22, sz * 0.42);
+      g.add(w);
+    }
+  }
+  const fill = at(box(1.1, 0.5, 0.7, COLORS.gold), 0, 0.58, 0);
+  g.add(fill);
+  // A couple of nuggets proud of the rim, so a full cart is unmistakably full of GOLD.
+  for (const [nx, nz] of [[-0.3, 0.15], [0.28, -0.12]] as const) {
+    const nug = new THREE.Mesh(GEO.seamNugget, lam(COLORS.gold));
+    nug.position.set(nx, 0.9, nz);
+    fill.add(nug);
+  }
+  g.userData.refs = { fill } satisfies MineRefs;
+  return g;
+}
+
+/**
+ * A lantern post for the compound: dark timber post, a warm glass box in a bracket, snow on the
+ * cap. Drawn, not lit — a real light per post would be a shadow-casting draw each, and at this
+ * camera the read comes from the shape and the colour.
+ */
+export function makeLanternPost(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(at(cyl(0.09, 2.4, COLORS.trunkDark), 0, 1.2, 0));
+  g.add(at(box(0.42, 0.12, 0.42, 0x3a3f45), 0, 2.4, 0));
+  g.add(at(box(0.3, 0.36, 0.3, 0xffe9a8), 0, 2.62, 0));
+  g.add(at(box(0.44, 0.1, 0.44, 0x3a3f45), 0, 2.84, 0));
+  g.add(at(box(0.46, 0.08, 0.46, COLORS.snowCap), 0, 2.92, 0));
   freezeChildren(g);
   return g;
 }
@@ -1248,9 +1496,14 @@ function campGrandFort(g: THREE.Group): void {
   for (const px of [-1, 1])
     for (const pz of [-1, 1])
       g.add(at(cyl(postR, 4.6, COLORS.trunk), px * (CAMP_HALF - postR), 2.3, pz * (CAMP_HALF - postR)));
+  // Banner: pole with a finial, a two-colour field, a white bar across it and a swallow-tail
+  // hem, so the fort flies something with a device on it rather than a blue rectangle.
   g.add(at(cyl(0.12, 5.4, 0xd8d2c4), 0, 3.1, -wall));
+  g.add(at(sph(0.16, COLORS.gold), 0, 5.85, -wall));
   g.add(at(box(2.2, 1.3, 0.12, COLORS.playerCoat), 1.1, 5.1, -wall));
   g.add(at(box(2.2, 0.3, 0.16, 0xf4f8fb), 1.1, 4.7, -wall));
+  g.add(at(box(2.2, 0.26, 0.14, COLORS.playerCoatDark), 1.1, 5.72, -wall));
+  for (const tx of [0.45, 1.75]) g.add(at(box(0.62, 0.34, 0.12, COLORS.playerCoat), tx, 4.28, -wall));
   // Cash vault: dark strongbox with gold trim, plus loose bars on the counter.
   g.add(at(box(2.4, 1.7, 1.5, 0x3a4046), 2.6, 1.25, 2.2));
   g.add(at(box(2.5, 0.22, 1.6, COLORS.gold), 2.6, 2.2, 2.2));

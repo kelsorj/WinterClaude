@@ -1,22 +1,24 @@
 import * as THREE from 'three';
 import { TOOLS } from '../content/balance';
 import {
-  DEPOT_POS, PLAZA_RADIUS, WORLD_BOUNDS, ZONE_RECTS, compoundFencePosts, worldBounds,
+  DEPOT_POS, MINE_RAIL_DIR, MINE_RAIL_LENGTH, PLAZA_RADIUS, WORLD_BOUNDS, ZONE_RECTS,
+  compoundFencePosts, goldMinePos, worldBounds,
 } from '../content/map';
 import { cartPos, railActive } from '../game/systems/carts';
 import { padAvailable } from '../game/systems/pads';
 import { hash01 } from '../game/math';
 import type { Rect, Vec2 } from '../game/math';
-import type { GameEvent, GameState, GateZone, SellStation } from '../game/state';
+import type { GameEvent, GameState, GateZone, ResourceKind } from '../game/state';
 import type {
-  BearRefs, CartRefs, CustomerRefs, PadRefs, PlayerRefs, SawmillRefs, VillagerRefs,
+  BearRefs, CartRefs, CustomerRefs, MineRefs, PadRefs, PileStyle, PlayerRefs, SawmillRefs,
+  VillagerRefs,
 } from './meshes';
 import {
   BEAR_BODY_SCALE, CAMP_TIERS, COLORS, CUSTOMER_COATS, SHARED, bubbleTexture, lam, makeBear,
-  makeBench, makeCampTier, makeCarryBox, makeCart, makeCompoundFence, makeCrate, makeCustomer,
-  makeDropMesh, makeFenceRun, makeGateWall, makeIconTextLabel, makeMatMesh, makePadLabel,
-  makePadMesh, makePileStack, makePlayer, makePlaza, makeRailMesh, makeRock, makeSawmill,
-  makeSeam, makeSlab,
+  makeBench, makeCampTier, makeCarryUnit, makeCart, makeCompoundFence, makeCrate, makeCustomer,
+  makeDropMesh, makeFenceRun, makeGateWall, makeGoldMine, makeIconTextLabel, makeLanternPost,
+  makeMatMesh, makeMineCart, makePadLabel, makePadMesh, makePileStack, makePlayer, makePlaza,
+  makeRailMesh, makeRock, makeSawmill, makeSeam, makeSlab,
   makeBubbleLabel, makeTextLabel, makeTool, makeTurret, makeVillager, padLabelTexture, refsOf,
   snowflakeTexture, treeGeometries, treeMaterial,
 } from './meshes';
@@ -32,6 +34,17 @@ const SUN_OFFSET = new THREE.Vector3(-22, 36, 26);
 /** Half-extent of the orthographic shadow frustum — just wider than what the camera can see. */
 const SHADOW_EXTENT = 30;
 const ROAD_Z = 7;
+/** The commodities, in the order stacks are built in. Fixed so a pack's courses never reshuffle. */
+const RESOURCE_KINDS: ResourceKind[] = ['wood', 'meat', 'gold'];
+/**
+ * The mine cart's gauge (Amendment 6C). `MINE_CART_FULL` is the gold-in-hand plus recent
+ * deliveries that reads as a full cart: two miners carry one apiece, so four is "both of them
+ * working and a couple of loads just gone in". `MINE_MEMORY` is how long a delivery keeps
+ * counting, in seconds — long enough that the cart does not empty between trips (a round trip is
+ * 40-50 s of walking) but short enough that a quarry nobody is working visibly drains.
+ */
+const MINE_CART_FULL = 4;
+const MINE_MEMORY = 26;
 /** Width of `GEO.hpBar`; the drain offset has to match the authored geometry. */
 const HP_BAR_WIDTH = 1.36;
 /** How long the player's coat stays tinted after a bear connects. */
@@ -146,6 +159,11 @@ export class Renderer {
   private stationBubbles = new Map<string, THREE.Sprite>();
   private lastStock = new Map<string, number>();
   private hitFlash = 0;
+  /** The mine cart, and the smoothed gauge driving how full it looks. See `syncMine`. */
+  private mineCart: THREE.Object3D | null = null;
+  private mineFill = 0;
+  private minerCarried = 0;
+  private minedRecent = 0;
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
@@ -238,10 +256,19 @@ export class Renderer {
     this.scene.fog = new THREE.Fog(0xe6f1fa, far * FOG_NEAR_FRACTION, far);
   }
 
-  /** Boulders and crates dressing the roadside; deterministic so screenshots stay comparable. */
+  /**
+   * Boulders, crates and lantern posts dressing the road and the compound; deterministic so
+   * screenshots stay comparable.
+   *
+   * Four of these moved with the compound (Amendment 6A/6C): two rocks and two crate pairs used
+   * to sit on open snow that is now the gold stand's walk-in lane, the arrow stations' footings
+   * and the north shelf's pads. Props have no collision, so nothing was BROKEN by that — a
+   * shopper simply walked through a crate — but the reference frame's camp is dressed around its
+   * traffic, not through it.
+   */
   private buildProps(): void {
     const rocks: [number, number, number][] = [
-      [-30, -10.5, 1.0], [-14, 9.6, 0.8], [12, -10.2, 1.15], [27, 10.4, 0.9],
+      [-30, -10.5, 1.0], [-14, 9.6, 0.8], [9, -16, 1.15], [30.5, 13, 0.9],
       [-42, -9.8, 0.95], [40, -10.8, 1.05], [-6, -11.2, 0.7], [4, 10.8, 0.85],
     ];
     for (const [x, z, s] of rocks) {
@@ -251,8 +278,11 @@ export class Renderer {
       rock.rotation.y = hash01(`rock${x}${z}`) * Math.PI * 2;
       this.scene.add(rock);
     }
+    // Stores: a pair at each stand's shoulder, inside the compound and clear of every lane, plus
+    // the old roadside pairs out west.
     const crates: [number, number][] = [
-      [13.5, -8.6], [14.6, -9.4], [22.5, 8.8], [23.6, 9.5], [-11, -9.2], [9.5, 9.4],
+      [11.6, 6.4], [12.4, 5.6], [27.5, 6.5], [28.3, 5.7],
+      [8.5, -9.5], [9.6, -10.2], [-11, -9.2], [9.5, 9.4],
     ];
     for (const [x, z] of crates) {
       const crate = setShadow(makeCrate(), true);
@@ -260,6 +290,38 @@ export class Renderer {
       crate.rotation.y = hash01(`crate${x}${z}`) * 0.9;
       this.scene.add(crate);
     }
+    // Lantern posts on the plaza rim: two at each road gateway, at the verge, where a camp would
+    // light the way in. Placed off the ring's bearings that carry traffic or towers.
+    for (const deg of [30, 150, 210, 330]) {
+      const a = (deg * Math.PI) / 180;
+      const post = setShadow(makeLanternPost(), true);
+      post.position.set(
+        DEPOT_POS.x + Math.cos(a) * (PLAZA_RADIUS - 0.6), 0,
+        DEPOT_POS.z + Math.sin(a) * (PLAZA_RADIUS - 0.6),
+      );
+      this.scene.add(post);
+    }
+  }
+
+  /**
+   * The quarry's mine head (Amendment 6C): headframe, rail stub and the cart the miners fill.
+   * Hidden with the rest of the quarry until its gate is bought — the gate wall is what stands
+   * there until then, and a mine visible through it would give the game away.
+   */
+  private buildMine(): void {
+    const at = goldMinePos();
+    const group = new THREE.Group();
+    group.add(setShadow(makeGoldMine(), true, true));
+    const from = { x: 0.7, z: 0 };
+    const to = { x: MINE_RAIL_DIR.x * MINE_RAIL_LENGTH, z: MINE_RAIL_DIR.z * MINE_RAIL_LENGTH };
+    group.add(makeRailMesh([from, to]));
+    const cart = setShadow(makeMineCart(), true);
+    cart.position.set(to.x - 1.0, 0, to.z);
+    group.add(cart);
+    group.position.set(at.x, 0, at.z);
+    this.mineCart = cart;
+    this.meshes.set('goldmine', group);
+    this.scene.add(group);
   }
 
   /**
@@ -520,6 +582,7 @@ export class Renderer {
     this.buildGates();
     this.buildFences(state);
     this.buildCompound();
+    this.buildMine();
   }
 
   /**
@@ -565,6 +628,10 @@ export class Renderer {
     this.groundGroup = null;
     this.builtExpansions = -1;
     this.hitFlash = 0;
+    this.mineCart = null;
+    this.mineFill = 0;
+    this.minerCarried = 0;
+    this.minedRecent = 0;
   }
 
   /** Full teardown + rebuild (used by Restart). */
@@ -672,7 +739,9 @@ export class Renderer {
       }
     }
     for (const st of state.stations) {
-      this.syncPile(`cash-${st.id}`, st.matPos.x, st.matPos.z, st.matCash, COLORS.cash, 10, 24, 0.07);
+      this.syncPile(
+        `cash-${st.id}`, st.matPos.x, st.matPos.z, st.matCash, COLORS.cash, 10, 24, 0.07, 'bills',
+      );
       // Repainting a 256² canvas every frame would be wasteful and pointless: only redraw when
       // the whole-goods figure the bubble actually shows has moved.
       const count = Math.floor(st.stock);
@@ -690,7 +759,8 @@ export class Renderer {
       // pile at all rather than an eighteen-box stack that is permanently hidden.
       if (turret.dropsOnGround) continue;
       this.syncPile(
-        `out-${turret.id}`, turret.pos.x + 1.4, turret.pos.z + 1.4, turret.output, COLORS.meat, 3, 18,
+        `out-${turret.id}`, turret.pos.x + 1.4, turret.pos.z + 1.4, turret.output, COLORS.meat,
+        3, 18, 0, 'steak',
       );
     }
     for (const mill of state.sawmills) {
@@ -719,6 +789,7 @@ export class Renderer {
       load.scale.y = Math.max(cart.load / cart.cap, 0.2);
     }
     this.syncCamp(state);
+    this.syncMine(state, dt);
     for (let i = 0; i < state.villagers.length; i++) {
       const vil = state.villagers[i];
       const m = this.ensure(vil.id, () => setShadow(makeVillager(vil.kind), true));
@@ -728,9 +799,10 @@ export class Renderer {
       const jz = (((i * 53) % 11) - 5) * 0.12;
       const bob = Math.abs(Math.sin(this.t * 8 + i)) * 0.08;
       m.position.set(vil.pos.x + jx, bob, vil.pos.z + jz);
+      // Show the armful of whatever it is carrying (Amendment 6C): a hauler with meat carries
+      // ministeaks, a miner coming home from the seam carries a stack of ingots.
       const refs = refsOf<VillagerRefs>(m);
-      refs.load.visible = vil.carrying !== null;
-      if (vil.carrying) refs.load.material = lam(COLORS[vil.carrying]);
+      for (const kind of RESOURCE_KINDS) refs.loads[kind].visible = vil.carrying === kind;
     }
     this.syncCustomers(state);
     for (const [zone, wall] of this.gates) wall.visible = !state.zonesOpen[zone];
@@ -742,6 +814,38 @@ export class Renderer {
     this.sun.position.copy(this.target).add(SUN_OFFSET);
     this.sun.target.position.copy(this.target);
     this.sun.target.updateMatrixWorld();
+  }
+
+  /**
+   * How full the mine cart looks. There is no "cart" in the simulation to read, so the gauge is
+   * built from something honest that IS in it: the gold the miners are carrying right now, plus a
+   * decaying memory of what they have just delivered. A miner's load dropping is a delivery — it
+   * only ever drops at the depot — so the two together track "how hard this quarry is being
+   * worked" without the renderer inventing a number or the simulation carrying one for it.
+   *
+   * The result is smoothed toward rather than snapped to, so a delivery raises the ore in the
+   * cart over a second instead of teleporting it.
+   */
+  private syncMine(state: GameState, dt: number): void {
+    const mine = this.meshes.get('goldmine');
+    if (!mine || !this.mineCart) return;
+    mine.visible = state.zonesOpen.quarry;
+    if (!mine.visible) return;
+    let carried = 0;
+    for (const vil of state.villagers) {
+      if (vil.kind === 'miner' && vil.carrying === 'gold') carried += vil.amount;
+    }
+    this.minedRecent += Math.max(0, this.minerCarried - carried);
+    this.minerCarried = carried;
+    this.minedRecent *= Math.exp(-dt / MINE_MEMORY);
+    const target = Math.min(1, (carried + this.minedRecent) / MINE_CART_FULL);
+    this.mineFill += (target - this.mineFill) * (1 - Math.exp(-2 * dt));
+    const fill = refsOf<MineRefs>(this.mineCart).fill;
+    const level = Math.max(this.mineFill, 0.001);
+    fill.visible = this.mineFill > 0.02;
+    fill.scale.y = level;
+    // The ore block is 0.5 tall centred at 0.58; grow it from the cart's floor, not its middle.
+    fill.position.y = 0.33 + 0.25 * level;
   }
 
   /**
@@ -762,8 +866,9 @@ export class Renderer {
       let m = this.customerMeshes.get(c.id);
       if (!m) {
         const h = hash01(c.id);
-        m = setShadow(makeCustomer(Math.floor(h * CUSTOMER_COATS.length)), true);
-        m.userData.station = state.stations.find((s) => s.id === c.stationId) ?? null;
+        const st = state.stations.find((s) => s.id === c.stationId) ?? null;
+        m = setShadow(makeCustomer(Math.floor(h * CUSTOMER_COATS.length), st?.resource), true);
+        m.userData.station = st;
         m.userData.phase = h * 6;
         m.userData.last = { x: c.pos.x, z: c.pos.z };
         m.userData.carrying = false;
@@ -784,10 +889,9 @@ export class Renderer {
       const carrying = c.bought > 0;
       if (carrying !== m.userData.carrying) {
         m.userData.carrying = carrying;
-        const refs = refsOf<CustomerRefs>(m);
-        refs.load.visible = carrying;
-        const st = m.userData.station as SellStation | null;
-        if (carrying && st) refs.load.material = lam(COLORS[st.resource]);
+        // The armful was built for this shopper's own commodity at spawn, so there is nothing to
+        // pick: it either has its purchase or it does not.
+        refsOf<CustomerRefs>(m).load.visible = carrying;
       }
     }
     for (const [id, m] of this.customerMeshes) {
@@ -820,28 +924,29 @@ export class Renderer {
       this.scene.add(g);
     }
     const info = CAMP_TIERS[tier];
-    const kinds = ['wood', 'meat', 'gold'] as const;
     const colors = [COLORS.wood, COLORS.meat, COLORS.gold];
-    for (let i = 0; i < kinds.length; i++) {
+    const styles: PileStyle[] = ['crate', 'steak', 'crate'];
+    for (let i = 0; i < RESOURCE_KINDS.length; i++) {
       const spot = info.piles[i];
       this.syncPile(
-        `depot-${kinds[i]}`, state.depotPos.x + spot.x, state.depotPos.z + spot.z,
-        state.depot[kinds[i]], colors[i], 3, 18, info.floorY,
+        `depot-${RESOURCE_KINDS[i]}`, state.depotPos.x + spot.x, state.depotPos.z + spot.z,
+        state.depot[RESOURCE_KINDS[i]], colors[i], 3, 18, info.floorY, styles[i],
       );
     }
   }
 
   /**
    * One pile renderer for station cash, machine outputs and depot stockpiles. Every pile is a
-   * capped grid of boxes — three wide, two deep, stacking upward — so a cash mat reads as the
-   * ad's bundled bills and a stockpile as crates. `unitsPerBox` sets how fast it grows and
-   * `cap` bounds the mesh count; `baseY` lifts a pile onto a camp platform or shelf.
+   * capped grid — three wide, two deep, stacking upward — and `style` decides what it is a grid
+   * OF (Amendment 6C): crates for wood and gold, textured bricks of notes for cash, columns of
+   * ministeaks for meat. `unitsPerBox` sets how fast it grows and `cap` bounds the mesh count;
+   * `baseY` lifts a pile onto a camp platform or shelf.
    */
   private syncPile(
     id: string, x: number, z: number, count: number, color: number,
-    unitsPerBox: number, cap: number, baseY = 0,
+    unitsPerBox: number, cap: number, baseY = 0, style: PileStyle = 'crate',
   ): void {
-    const g = this.ensure(id, () => setShadow(makePileStack(color, cap), true));
+    const g = this.ensure(id, () => setShadow(makePileStack(color, cap, style), true));
     const boxes = count > 0 ? Math.min(Math.ceil(count / unitsPerBox), cap) : 0;
     g.visible = boxes > 0;
     g.position.set(x, baseY, z);
@@ -887,18 +992,19 @@ export class Renderer {
       this.lastCarryKey = carryKey;
       refs.carry.clear();
       let y = 0;
-      const add = (count: number, color: number) => {
+      // One course per two goods, in the commodity's own shape (Amendment 6C): the pack reads as
+      // logs, steaks and bars rather than three colours of the same box.
+      const add = (count: number, kind: ResourceKind) => {
         for (let i = 0; i < Math.ceil(count / 2); i++) {
-          const box = makeCarryBox(color);
-          box.castShadow = true;
-          box.position.y = y;
-          y += 0.19;
-          refs.carry.add(box);
+          const unit = makeCarryUnit(kind);
+          unit.castShadow = true;
+          unit.position.y = y;
+          unit.rotation.y = (i % 2) * 0.3;
+          y += kind === 'meat' ? 0.15 : 0.19;
+          refs.carry.add(unit);
         }
       };
-      add(p.carry.wood, COLORS.wood);
-      add(p.carry.meat, COLORS.meat);
-      add(p.carry.gold, COLORS.gold);
+      for (const kind of RESOURCE_KINDS) add(p.carry[kind], kind);
     }
   }
 
@@ -927,6 +1033,21 @@ export class Renderer {
   private dropFloat(f: FloatingText): void {
     this.scene.remove(f.sprite);
     f.sprite.material.dispose();
+  }
+
+  /**
+   * What the last frame cost the GPU, for verification in the browser. `three` keeps these
+   * counters itself; this only reads them, and the scene-object count alongside them is what
+   * tells you whether a draw-call number is "one merged mesh" or "eight hundred little ones".
+   */
+  stats(): { calls: number; triangles: number; objects: number } {
+    let objects = 0;
+    this.scene.traverse(() => { objects++; });
+    return {
+      calls: this.webgl.info.render.calls,
+      triangles: this.webgl.info.render.triangles,
+      objects,
+    };
   }
 
   render(dt: number): void {
